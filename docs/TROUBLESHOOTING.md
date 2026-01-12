@@ -186,10 +186,9 @@ htop  # If available
 **Solution:**
 ```bash
 # Check config files exist
-ls -la .cursor/ralph-ollama/config/
+ls -la config/
 
 # Verify paths in scripts
-cd .cursor/ralph-ollama
 ./scripts/ralph-ollama.sh --config config/workflow-config.json
 ```
 
@@ -226,7 +225,7 @@ jq . config/ollama-config.json
 **Solution:**
 ```bash
 # Make scripts executable
-chmod +x .cursor/ralph-ollama/scripts/*.sh
+chmod +x scripts/*.sh
 
 # Verify
 ls -l scripts/
@@ -242,11 +241,11 @@ ls -l scripts/
 
 **Solution:**
 ```bash
-# Run from correct directory
-cd .cursor/ralph-ollama
+# Run from project root directory
+./scripts/ralph-ollama.sh
 
 # Or use absolute path
-/path/to/.cursor/ralph-ollama/scripts/ralph-ollama.sh
+/path/to/ralph-ollama-standalone/scripts/ralph-ollama.sh
 ```
 
 ---
@@ -287,7 +286,7 @@ jq --version
 # Set environment variables
 export RALPH_LLM_PROVIDER=ollama
 export RALPH_LLM_MODEL=llama3.2
-export RALPH_OLLAMA_CONFIG=.cursor/ralph-ollama/config/ollama-config.json
+export RALPH_OLLAMA_CONFIG=./config/ollama-config.json
 
 # Verify
 echo $RALPH_LLM_PROVIDER

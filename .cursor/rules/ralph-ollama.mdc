@@ -1,0 +1,127 @@
+---
+description: Ralph Ollama integration - use local LLM with Ollama for development workflows
+alwaysApply: false
+priority: 6
+---
+
+# Ralph Ollama Integration
+
+When working with Ralph workflows, you can use the local Ollama integration for LLM-powered tasks.
+
+## Overview
+
+The Ralph Ollama integration provides local LLM capabilities using Ollama. This is useful for:
+- Code generation and implementation
+- Code review and analysis
+- Documentation generation
+- Testing and debugging assistance
+- Local development workflows (privacy, cost savings, no rate limits)
+
+## Integration Location
+
+All integration code is in: `.cursor/ralph-ollama/`
+
+## When to Use Ollama Integration
+
+Use the Ollama integration when:
+- User explicitly requests using Ollama or local LLM
+- Working on code generation tasks
+- Performing code analysis or review
+- Generating documentation
+- User wants to avoid cloud API costs/limits
+- Working offline or with privacy requirements
+
+## How to Use
+
+### Option 1: Python Scripts
+
+Create Python scripts that use the Ollama adapter:
+
+```python
+import sys
+from pathlib import Path
+
+# Add paths
+lib_path = Path('.cursor/ralph-ollama/lib')
+integration_path = Path('.cursor/ralph-ollama/integration')
+sys.path.insert(0, str(lib_path))
+sys.path.insert(0, str(integration_path))
+
+from ralph_ollama_adapter import call_llm
+
+# Use it
+response = call_llm("Write a function to sort a list", task_type="implementation")
+print(response)
+```
+
+### Option 2: Demo Script
+
+Run the provided demo script:
+
+```bash
+cd .cursor/ralph-ollama
+./venv/bin/python3 examples/ralph_workflow_demo.py
+```
+
+### Option 3: Direct Client
+
+Use the client directly for more control:
+
+```python
+from .cursor.ralph_ollama.lib.ollama_client import OllamaClient
+
+client = OllamaClient()
+result = client.generate("Your prompt here")
+print(result['response'])
+```
+
+## Configuration
+
+Configuration files:
+- `.cursor/ralph-ollama/config/ollama-config.json` - Ollama server and model settings
+- `.cursor/ralph-ollama/config/workflow-config.json` - Workflow integration settings
+
+## Requirements
+
+- Ollama server running (`ollama serve`)
+- At least one model pulled (e.g., `ollama pull llama3.2`)
+- Python dependencies installed (in venv: `venv/bin/pip install -r requirements.txt`)
+
+## Task Types
+
+The adapter supports task-based model selection:
+- `implementation` - Uses codellama (code generation)
+- `testing` - Uses llama3.2 (test generation)
+- `documentation` - Uses llama3.2 (documentation)
+- `code-review` - Uses codellama (code analysis)
+- `refactoring` - Uses codellama (code restructuring)
+
+## Integration with Ralph Workflow
+
+This integration works alongside existing Ralph workflow rules:
+- Follows Ralph workflow patterns (read specs, implement, test, update)
+- Uses Ollama for LLM-powered tasks instead of cloud APIs
+- Maintains Ralph status reporting and task tracking
+- Compatible with @fix_plan.md and other Ralph files
+
+## Examples
+
+See `.cursor/ralph-ollama/examples/` for working examples:
+- `simple_example.py` - Basic usage examples
+- `ralph_workflow_demo.py` - Complete Ralph workflow demo
+
+## Documentation
+
+Full documentation:
+- Quick Start: `.cursor/ralph-ollama/QUICK-START.md`
+- Usage Guide: `.cursor/ralph-ollama/USAGE.md`
+- Integration Guide: `.cursor/ralph-ollama/docs/INTEGRATION.md`
+- All Docs: `.cursor/ralph-ollama/INDEX.md`
+
+## Notes
+
+- Ollama must be running for integration to work
+- Models need to be pulled before use
+- Virtual environment contains dependencies (venv/)
+- Integration is for programmatic use in scripts, not direct Cursor AI routing
+- This rule provides guidance on when/how to use the integration

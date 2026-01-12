@@ -27,7 +27,6 @@ Your system uses an externally-managed Python environment. To install the `reque
 **Option 1: Use virtual environment (Recommended)**
 
 ```bash
-cd .cursor/ralph-ollama
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -59,8 +58,6 @@ brew install python-requests
 Once `requests` is installed:
 
 ```bash
-cd .cursor/ralph-ollama
-
 # Test connection
 python3 tests/test_connection.py
 
@@ -92,8 +89,6 @@ print(f'Response: {result[\"content\"]}')
 ## 🎯 Quick Start (After Dependencies)
 
 ```bash
-cd .cursor/ralph-ollama
-
 # Activate venv (if using Option 1)
 source venv/bin/activate
 

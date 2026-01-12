@@ -92,7 +92,6 @@
 Run the validation script to check structure:
 
 ```bash
-cd .cursor/ralph-ollama
 bash run_tests.sh
 ```
 

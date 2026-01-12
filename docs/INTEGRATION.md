@@ -51,7 +51,7 @@ def get_llm_response(prompt, system_prompt=None):
         return get_openai_response(prompt, system_prompt)
 
 def get_ollama_response(prompt, system_prompt=None):
-    config_path = os.getenv('RALPH_OLLAMA_CONFIG', '.cursor/ralph-ollama/config/ollama-config.json')
+    config_path = os.getenv('RALPH_OLLAMA_CONFIG', './config/ollama-config.json')
     
     with open(config_path) as f:
         config = json.load(f)
@@ -100,7 +100,7 @@ function getLLMResponse(prompt, systemPrompt = null) {
 
 async function getOllamaResponse(prompt, systemPrompt = null) {
   const configPath = process.env.RALPH_OLLAMA_CONFIG || 
-    '.cursor/ralph-ollama/config/ollama-config.json';
+    './config/ollama-config.json';
   
   const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   const model = process.env.RALPH_LLM_MODEL || config.defaultModel;
@@ -160,7 +160,7 @@ from pathlib import Path
 
 def detect_llm_provider():
     """Auto-detect LLM provider based on configuration."""
-    ollama_config = Path('.cursor/ralph-ollama/config/workflow-config.json')
+    ollama_config = Path('config/workflow-config.json')
     
     if ollama_config.exists():
         import json
@@ -223,7 +223,7 @@ import os
 def load_ollama_config():
     config_path = os.getenv(
         'RALPH_OLLAMA_CONFIG',
-        '.cursor/ralph-ollama/config/ollama-config.json'
+        './config/ollama-config.json'
     )
     
     with open(config_path) as f:
@@ -232,7 +232,7 @@ def load_ollama_config():
 def load_workflow_config():
     config_path = os.getenv(
         'RALPH_WORKFLOW_CONFIG',
-        '.cursor/ralph-ollama/config/workflow-config.json'
+        './config/workflow-config.json'
     )
     
     with open(config_path) as f:
@@ -301,7 +301,7 @@ import json
 import os
 from pathlib import Path
 
-cache_dir = Path('.cursor/ralph-ollama/state/cache')
+cache_dir = Path('state/cache')
 
 def get_cache_key(prompt, model, params):
     """Generate cache key from prompt and parameters."""

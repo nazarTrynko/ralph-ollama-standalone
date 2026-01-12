@@ -193,7 +193,7 @@ Use environment variables to control provider:
 ```bash
 # Use Ollama
 export RALPH_LLM_PROVIDER=ollama
-export RALPH_OLLAMA_CONFIG=.cursor/ralph-ollama/config/ollama-config.json
+export RALPH_OLLAMA_CONFIG=./config/ollama-config.json
 
 # Run your script
 python your_script.py

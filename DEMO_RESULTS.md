@@ -100,7 +100,6 @@ The integration provides:
 
 2. **Run the demo script:**
    ```bash
-   cd .cursor/ralph-ollama
    source venv/bin/activate
    python3 examples/create_something.py
    ```

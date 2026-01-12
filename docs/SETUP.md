@@ -73,7 +73,6 @@ ollama pull phi3         # Lightweight, fast
 Run the setup validation script:
 
 ```bash
-cd .cursor/ralph-ollama
 chmod +x scripts/*.sh
 ./scripts/setup-ollama.sh
 ```
@@ -127,7 +126,7 @@ Set environment variables and run Ralph:
 ```bash
 export RALPH_LLM_PROVIDER=ollama
 export RALPH_LLM_MODEL=llama3.2
-export RALPH_OLLAMA_CONFIG=.cursor/ralph-ollama/config/ollama-config.json
+export RALPH_OLLAMA_CONFIG=./config/ollama-config.json
 
 # Run your Ralph workflow
 # (depends on your Ralph implementation)

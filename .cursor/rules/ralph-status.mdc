@@ -1,0 +1,89 @@
+---
+description: Ralph status reporting format - CRITICAL for loop detection
+alwaysApply: true
+priority: 2
+---
+
+# Ralph Status Reporting
+
+## MANDATORY: Include Status Block
+
+At the END of EVERY response, you MUST include this exact status block:
+
+```
+---RALPH_STATUS---
+STATUS: IN_PROGRESS | COMPLETE | BLOCKED
+TASKS_COMPLETED_THIS_LOOP: <number>
+FILES_MODIFIED: <number>
+TESTS_STATUS: PASSING | FAILING | NOT_RUN
+WORK_TYPE: IMPLEMENTATION | TESTING | DOCUMENTATION | REFACTORING
+EXIT_SIGNAL: false | true
+RECOMMENDATION: <one line summary>
+---END_RALPH_STATUS---
+```
+
+## Status Values
+
+- **STATUS**: Current state of work
+  - `IN_PROGRESS`: Actively working on tasks
+  - `COMPLETE`: All work finished, ready to exit
+  - `BLOCKED`: Cannot proceed (rate limit, missing dependency, etc.)
+
+- **EXIT_SIGNAL**: Whether to stop the loop
+  - `true`: Exit loop (work complete OR rate limit reached)
+  - `false`: Continue to next iteration
+
+## When to Set EXIT_SIGNAL: true
+
+Set `EXIT_SIGNAL: true` when ANY of these are true:
+1. All items in `@fix_plan.md` are marked [x] AND tests passing
+2. Rate limit detected (see ralph-rate-limits.mdc)
+3. Same error repeated 3+ times with no progress
+4. No meaningful work remains
+
+## Examples
+
+**Work in progress:**
+```
+---RALPH_STATUS---
+STATUS: IN_PROGRESS
+TASKS_COMPLETED_THIS_LOOP: 1
+FILES_MODIFIED: 3
+TESTS_STATUS: PASSING
+WORK_TYPE: IMPLEMENTATION
+EXIT_SIGNAL: false
+RECOMMENDATION: Continue with next priority task
+---END_RALPH_STATUS---
+```
+
+**Complete:**
+```
+---RALPH_STATUS---
+STATUS: COMPLETE
+TASKS_COMPLETED_THIS_LOOP: 1
+FILES_MODIFIED: 2
+TESTS_STATUS: PASSING
+WORK_TYPE: DOCUMENTATION
+EXIT_SIGNAL: true
+RECOMMENDATION: All requirements met, project ready
+---END_RALPH_STATUS---
+```
+
+**Blocked:**
+```
+---RALPH_STATUS---
+STATUS: BLOCKED
+TASKS_COMPLETED_THIS_LOOP: 0
+FILES_MODIFIED: 0
+TESTS_STATUS: FAILING
+WORK_TYPE: DEBUGGING
+EXIT_SIGNAL: false
+RECOMMENDATION: Need human help - same error for 3 loops
+---END_RALPH_STATUS---
+```
+
+## Critical Notes
+
+- ❌ Do NOT forget to include the status block (Ralph depends on it!)
+- ❌ Do NOT continue with busy work when EXIT_SIGNAL should be true
+- ✅ Always output the status block at the very end of your response

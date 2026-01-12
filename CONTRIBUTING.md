@@ -15,9 +15,6 @@ Guidelines for contributing improvements, fixes, and new features.
 ### Setup
 
 ```bash
-# Clone/navigate to repository
-cd .cursor/ralph-ollama
-
 # Install dependencies
 pip install -r requirements.txt
 

@@ -3,7 +3,8 @@
     "rulesPath": ".cursor/rules",
     "specsPath": "specs",
     "fixPlanPath": "@fix_plan.md",
-    "agentPath": "@AGENT.md"
+    "agentPath": "@AGENT.md",
+    "_note": "These paths are relative to project root. They are optional and only used if integrating with full Ralph workflow."
   },
   "ollama": {
     "enabled": true,

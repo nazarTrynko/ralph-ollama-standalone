@@ -1,0 +1,69 @@
+---
+description: How to detect when Ralph's work is complete
+alwaysApply: true
+priority: 4
+---
+
+# Completion Detection
+
+## Completion Criteria
+
+Work is complete when ALL of these are true:
+1. ✅ All items in `@fix_plan.md` are marked [x]
+2. ✅ All tests are passing (or no tests exist for valid reasons)
+3. ✅ No errors or warnings in recent execution
+4. ✅ All requirements from `specs/` are implemented
+5. ✅ Nothing meaningful left to implement
+
+## Verification Steps
+
+Before setting EXIT_SIGNAL: true for completion:
+1. Read `@fix_plan.md` - verify all tasks [x]
+2. Check `specs/prd.json` - verify user stories implemented
+3. Run tests - verify all passing
+4. Review recent changes - verify no errors
+5. Check `specs/prd-auraflix.md` - verify all requirements met
+
+## Completion Status Block
+
+When complete, output:
+
+```
+---RALPH_STATUS---
+STATUS: COMPLETE
+TASKS_COMPLETED_THIS_LOOP: <number>
+FILES_MODIFIED: <number>
+TESTS_STATUS: PASSING
+WORK_TYPE: DOCUMENTATION
+EXIT_SIGNAL: true
+RECOMMENDATION: All requirements met, project ready for review
+---END_RALPH_STATUS---
+```
+
+## What NOT to Do When Complete
+
+- ❌ Do NOT continue with busy work
+- ❌ Do NOT add unnecessary tests
+- ❌ Do NOT refactor working code
+- ❌ Do NOT add features not in specifications
+- ✅ Set EXIT_SIGNAL: true and stop
+
+## Completion Scenarios
+
+### Scenario 1: All Tasks Done
+- All items in `@fix_plan.md` marked [x]
+- Tests passing
+- No errors
+→ Set EXIT_SIGNAL: true
+
+### Scenario 2: No Work Remaining
+- `@fix_plan.md` shows all tasks complete
+- No new requirements in `specs/`
+- Code quality acceptable
+→ Set EXIT_SIGNAL: true
+
+### Scenario 3: Specifications Fully Implemented
+- `specs/prd.json` shows all user stories implemented
+- All acceptance criteria met
+- Tests passing
+→ Set EXIT_SIGNAL: true

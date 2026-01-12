@@ -1,0 +1,59 @@
+---
+description: Rate limit detection and handling - prevents infinite loops
+alwaysApply: true
+priority: 3
+---
+
+# Rate Limit Handling
+
+## CRITICAL: Immediate Detection Required
+
+If you detect ANY rate limit indicator, you MUST:
+1. **STOP all work immediately**
+2. **Output RALPH_STATUS with EXIT_SIGNAL: true**
+3. **Do NOT attempt any operations**
+
+## Rate Limit Indicators
+
+Watch for these patterns (case-insensitive):
+- "You've hit your limit"
+- "rate limit"
+- "resets" (with time)
+- "429" (HTTP status)
+- "quota exceeded"
+- "too many requests"
+- "API rate limit"
+- "limit reached"
+
+## Required Response on Rate Limit
+
+When rate limit detected, immediately output:
+
+```
+---RALPH_STATUS---
+STATUS: BLOCKED
+TASKS_COMPLETED_THIS_LOOP: 0
+FILES_MODIFIED: 0
+TESTS_STATUS: NOT_RUN
+WORK_TYPE: IMPLEMENTATION
+EXIT_SIGNAL: true
+RECOMMENDATION: Rate limit reached - waiting for reset. Exit immediately.
+---END_RALPH_STATUS---
+```
+
+## Pre-Check Before Starting
+
+Before beginning any work in a conversation:
+1. Check if previous conversation mentioned rate limits
+2. If yes, set EXIT_SIGNAL: true immediately
+3. Do NOT attempt any API calls or operations
+
+## Circuit Breaker Pattern
+
+- If rate limit appears in 2 consecutive conversations → EXIT_SIGNAL: true
+- Do NOT wait for 5 loops like other errors
+- Rate limits require immediate exit to prevent infinite loops
+
+## Priority
+
+Rate limit detection takes **highest priority** - it overrides all other work.

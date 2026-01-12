@@ -31,7 +31,7 @@ ollama pull llama3.2
 ## 3. Verify Setup
 
 ```bash
-cd .cursor/ralph-ollama
+# Make scripts executable
 chmod +x scripts/*.sh
 
 # Quick validation (checks structure)
@@ -60,7 +60,7 @@ python3 integration/ralph_ollama_adapter.py "Your prompt" implementation
 # Option 4: Set environment variables and run your workflow
 export RALPH_LLM_PROVIDER=ollama
 export RALPH_LLM_MODEL=llama3.2
-export RALPH_OLLAMA_CONFIG=.cursor/ralph-ollama/config/ollama-config.json
+export RALPH_OLLAMA_CONFIG=./config/ollama-config.json
 # Then run your Ralph workflow
 ```
 

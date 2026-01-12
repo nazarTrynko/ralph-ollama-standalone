@@ -95,7 +95,6 @@
 ## Quick Start (Ready to Use!)
 
 ```bash
-cd .cursor/ralph-ollama
 source venv/bin/activate
 python3 examples/ralph_workflow_demo.py
 ```
@@ -106,8 +105,8 @@ Or use in your own scripts:
 import sys
 from pathlib import Path
 
-sys.path.insert(0, '.cursor/ralph-ollama/lib')
-sys.path.insert(0, '.cursor/ralph-ollama/integration')
+sys.path.insert(0, 'lib')
+sys.path.insert(0, 'integration')
 
 from ralph_ollama_adapter import call_llm
 

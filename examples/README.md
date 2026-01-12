@@ -52,7 +52,7 @@ from pathlib import Path
 import sys
 
 # Add lib to path
-lib_path = Path(__file__).parent.parent / '.cursor' / 'ralph-ollama' / 'lib'
+lib_path = Path(__file__).parent.parent / 'lib'
 sys.path.insert(0, str(lib_path))
 
 from ollama_client import OllamaClient
@@ -87,7 +87,7 @@ print(response)
 ```bash
 export RALPH_LLM_PROVIDER=ollama
 export RALPH_LLM_MODEL=codellama
-export RALPH_OLLAMA_CONFIG=.cursor/ralph-ollama/config/ollama-config.json
+export RALPH_OLLAMA_CONFIG=./config/ollama-config.json
 
 python3 your_script.py
 ```

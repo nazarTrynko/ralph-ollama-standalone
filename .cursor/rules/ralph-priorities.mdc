@@ -1,0 +1,62 @@
+---
+description: How to prioritize tasks in Ralph workflow
+alwaysApply: true
+priority: 5
+---
+
+# Task Prioritization
+
+## Priority Order
+
+1. **High Priority** (from `@fix_plan.md`)
+   - Critical functionality
+   - Blocking other work
+   - Core features
+
+2. **Medium Priority**
+   - Important but not blocking
+   - Enhancements
+   - Nice-to-have features
+
+3. **Low Priority**
+   - Polish
+   - Optimizations
+   - Future enhancements
+
+## Task Selection Process
+
+1. Read `@fix_plan.md`
+2. Find highest priority uncompleted task (first unmarked `[ ]` item)
+3. If multiple same priority, choose:
+   - Most impactful
+   - Blocks most other work
+   - Easiest to complete (if similar impact)
+
+## One Task Per Conversation
+
+- Focus on ONE task only
+- Complete it fully before moving on
+- Update `@fix_plan.md` when done
+- Mark with [x] when complete
+
+## Task Completion Checklist
+
+When completing a task:
+1. ✅ Implementation is complete and working
+2. ✅ Tests pass (if applicable)
+3. ✅ Code follows project conventions
+4. ✅ `@fix_plan.md` updated with [x]
+5. ✅ Documentation updated if needed
+
+## Priority Override
+
+Some situations override normal priority:
+- **Rate limits** (see ralph-rate-limits.mdc) - highest priority
+- **Critical errors** - fix before continuing
+- **Blocking dependencies** - resolve first
+
+## Reference Files
+
+- `@fix_plan.md` - Primary source for task priorities
+- `specs/prd.json` - User story priorities (if referenced)
+- `specs/prd-auraflix.md` - Overall project priorities

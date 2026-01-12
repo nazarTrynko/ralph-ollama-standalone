@@ -9,8 +9,6 @@ Quick reference for using Ralph Ollama integration.
 ### 1. Setup (One-time)
 
 ```bash
-cd .cursor/ralph-ollama
-
 # Activate virtual environment
 source venv/bin/activate
 
@@ -41,8 +39,8 @@ import sys
 from pathlib import Path
 
 # Setup paths
-lib_path = Path('.cursor/ralph-ollama/lib')
-integration_path = Path('.cursor/ralph-ollama/integration')
+lib_path = Path('lib')
+integration_path = Path('integration')
 sys.path.insert(0, str(lib_path))
 sys.path.insert(0, str(integration_path))
 
@@ -111,7 +109,6 @@ print(result['response'])
 ## Running the Demo
 
 ```bash
-cd .cursor/ralph-ollama
 source venv/bin/activate
 python3 examples/ralph_workflow_demo.py
 ```
@@ -256,7 +253,7 @@ Set these to configure the integration:
 ```bash
 export RALPH_LLM_PROVIDER=ollama
 export RALPH_LLM_MODEL=llama3.2:latest
-export RALPH_OLLAMA_CONFIG=.cursor/ralph-ollama/config/ollama-config.json
+export RALPH_OLLAMA_CONFIG=./config/ollama-config.json
 ```
 
 ---
@@ -287,7 +284,6 @@ ollama pull llama3.2
 
 ```bash
 # Activate virtual environment
-cd .cursor/ralph-ollama
 source venv/bin/activate
 
 # Verify dependencies
@@ -303,7 +299,7 @@ import sys
 from pathlib import Path
 
 # Add paths BEFORE imports
-lib_path = Path('.cursor/ralph-ollama/lib')
+lib_path = Path('lib')
 sys.path.insert(0, str(lib_path))
 ```
 
