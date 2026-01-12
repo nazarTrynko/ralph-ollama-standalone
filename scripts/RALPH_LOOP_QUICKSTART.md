@@ -39,6 +39,26 @@ Run Ralph autonomous development loops with cycle control:
   --max-cycles 16
 ```
 
+### Use Reasoning Model for Planning
+
+```bash
+./scripts/ralph-loop.sh \
+  --prompt "Design architecture for microservices" \
+  --model mistral \
+  --min-cycles 4 \
+  --max-cycles 12
+```
+
+### Use Fast Model for Quick Tasks
+
+```bash
+./scripts/ralph-loop.sh \
+  --prompt "Add simple utility functions" \
+  --model phi3 \
+  --min-cycles 4 \
+  --max-cycles 8
+```
+
 ### Work on Root Directory
 
 ```bash
@@ -57,6 +77,11 @@ _Note: Shows confirmation prompt before proceeding_
 - **One Task** = 4 cycles (one of each phase)
 - **min-cycles**: Minimum phases before stopping (soft limit)
 - **max-cycles**: Maximum phases allowed (hard limit)
+- **Model Selection**: Use `--model` to specify which Ollama model to use. If not specified, models are auto-selected based on task type:
+  - `codellama` - Best for code generation and implementation
+  - `mistral` - Best for reasoning, planning, and architecture
+  - `llama3.2` - General purpose (default)
+  - `phi3` - Fast, lightweight for quick tasks
 
 ## Cycle Examples
 

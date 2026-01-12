@@ -292,6 +292,7 @@ def ralph_start() -> Tuple[Response, int]:
         initial_task = data.get('initial_task', '')
         mode_str = data.get('mode', 'phase_by_phase')
         project_path = data.get('project_path', None)
+        model = data.get('model', None)  # Get model from request
         
         # Determine project path
         is_existing_project = False
@@ -334,7 +335,7 @@ def ralph_start() -> Tuple[Response, int]:
             # Stop existing loop if running
             ralph_loops[session_id].stop()
         
-        loop_engine = RalphLoopEngine(project_dir, adapter)
+        loop_engine = RalphLoopEngine(project_dir, adapter, model=model)
         ralph_loops[session_id] = loop_engine
         
         # Initialize project only if it's new

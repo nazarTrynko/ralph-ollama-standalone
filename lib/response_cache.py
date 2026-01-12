@@ -303,7 +303,9 @@ def get_cache() -> ResponseCache:
         # Load config to get cache settings
         try:
             from lib.config import load_and_validate_config, DEFAULT_CONFIG_PATH
-            config = load_and_validate_config(DEFAULT_CONFIG_PATH)
+            # Convert string path to Path object before passing to load_and_validate_config
+            config_path = Path(DEFAULT_CONFIG_PATH)
+            config = load_and_validate_config(config_path)
             cache_config = config.get('cache', {})
             
             _global_cache = ResponseCache(

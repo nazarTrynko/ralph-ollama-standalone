@@ -62,8 +62,8 @@ class RalphLoopRunner:
         if not self.adapter.check_available():
             raise RuntimeError("Ollama adapter not available. Check server connection.")
         
-        # Initialize engine
-        self.engine = RalphLoopEngine(self.project_path, self.adapter)
+        # Initialize engine with model preference
+        self.engine = RalphLoopEngine(self.project_path, self.adapter, model=self.model)
         
         # Cycle tracking
         self.phase_count = 0
@@ -229,7 +229,10 @@ class RalphLoopRunner:
         print(f"   Project: {self.project_name}")
         print(f"   Prompt: {self.prompt[:60]}...")
         print(f"   Cycles: {self.min_cycles} - {self.max_cycles}")
-        print(f"   Mode: {self.mode.value}\n")
+        print(f"   Mode: {self.mode.value}")
+        if self.model:
+            print(f"   Model: {self.model}")
+        print()
         
         # Set up project
         try:
@@ -299,13 +302,48 @@ class RalphLoopRunner:
         print(f"   Time elapsed: {elapsed_time:.1f}s")
         print(f"   Final phase: {final_status.get('current_phase', 'unknown')}")
         
+        # Get additional stats for milestone
+        files = final_status.get('files', [])
+        files_count = len(files) if files else 0
+        phase_history = final_status.get('phase_history', [])
+        
+        # Count completed tasks (UPDATE phases that succeeded)
+        completed_tasks = sum(1 for entry in phase_history 
+                            if entry.get('phase') == 'update' and entry.get('success'))
+        
+        # Print finish milestone
+        print(f"\n🎯 Final Milestone")
+        print(f"   Project: {self.project_name or 'Unknown'}")
+        print(f"   Location: {self.project_path}")
+        print(f"   Files created: {files_count}")
+        print(f"   Tasks completed: {completed_tasks}")
+        
+        # Determine completion status
+        if final_phase_count >= self.min_cycles:
+            if final_phase_count >= self.max_cycles:
+                print(f"   Status: Maximum cycles reached ({self.max_cycles})")
+            else:
+                print(f"   Status: Minimum cycles completed ({self.min_cycles})")
+        else:
+            print(f"   Status: Stopped early (completed {final_phase_count}/{self.min_cycles} min cycles)")
+        
+        # Next steps
+        if files_count > 0:
+            print(f"\n📁 Next steps:")
+            print(f"   - Review files in: {self.project_path}")
+            if self.project_path.name != '.':
+                print(f"   - Check @fix_plan.md for remaining tasks")
+            print(f"   - Continue development or run another loop")
+        
         return {
             'success': True,
             'phases_completed': final_phase_count,
             'min_cycles': self.min_cycles,
             'max_cycles': self.max_cycles,
             'elapsed_time': elapsed_time,
-            'final_status': final_status
+            'final_status': final_status,
+            'files_created': files_count,
+            'tasks_completed': completed_tasks
         }
 
 

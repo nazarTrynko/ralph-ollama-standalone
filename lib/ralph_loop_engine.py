@@ -52,16 +52,19 @@ class RalphLoopEngine:
     def __init__(
         self,
         project_path: Path,
-        adapter: Optional[RalphOllamaAdapter] = None
+        adapter: Optional[RalphOllamaAdapter] = None,
+        model: Optional[str] = None
     ):
         """Initialize Ralph loop engine.
         
         Args:
             project_path: Path to the project directory
             adapter: Optional Ralph adapter (creates new one if not provided)
+            model: Optional model name to use for all LLM calls (overrides task-based selection)
         """
         self.project_path = Path(project_path).resolve()
         self.adapter = adapter or RalphOllamaAdapter()
+        self.model = model  # Store model preference for all LLM calls
         self.file_tracker = FileTracker(self.project_path)
         self.code_validator = CodeValidator(self.project_path)
         
@@ -473,6 +476,7 @@ List one task per line, without numbering or bullets."""
             result = self.adapter.generate(
                 prompt=prompt,
                 system_prompt=system_prompt,
+                model=self.model,  # Use stored model preference
                 task_type="implementation"
             )
             
@@ -640,6 +644,7 @@ Provide a clear analysis of what needs to be done, key requirements, and an impl
             response = call_llm(
                 prompt=prompt,
                 system_prompt=system_prompt,
+                model=self.model,  # Use stored model preference
                 task_type="code-review"
             )
             
@@ -704,6 +709,7 @@ For multiple files, provide each file separately."""
             response = call_llm(
                 prompt=prompt,
                 system_prompt=system_prompt,
+                model=self.model,  # Use stored model preference
                 task_type="implementation"
             )
             
@@ -886,6 +892,49 @@ For multiple files, provide each file separately."""
         
         return files
     
+    def _sanitize_file_path(self, path: str) -> str:
+        """Sanitize a file path to ensure it's safe for filesystem.
+        
+        Args:
+            path: Raw file path string
+            
+        Returns:
+            Sanitized file path string
+        """
+        # Remove newlines and carriage returns
+        path = path.replace('\n', '').replace('\r', '')
+        
+        # Remove invalid filesystem characters (OS-dependent, but common ones)
+        # Windows: < > : " | ? * \
+        # Unix: / (and null byte, but that's handled by filesystem)
+        invalid_chars = '<>:"|?*\\'
+        for char in invalid_chars:
+            path = path.replace(char, '_')
+        
+        # Limit path length (OS limit is typically 255 bytes for filename)
+        # We'll limit to 200 characters to be safe and account for directory path
+        if len(path) > 200:
+            # Try to preserve extension if present
+            if '.' in path:
+                name, ext = path.rsplit('.', 1)
+                if len(ext) <= 10:  # Reasonable extension length
+                    # Truncate name part, keep extension
+                    max_name_len = 200 - len(ext) - 1  # -1 for the dot
+                    path = name[:max_name_len] + '.' + ext
+                else:
+                    path = path[:200]
+            else:
+                path = path[:200]
+        
+        # Remove leading/trailing dots and spaces (invalid on Windows)
+        path = path.strip('. ')
+        
+        # Ensure path is not empty
+        if not path:
+            path = 'file'
+        
+        return path
+    
     def _extract_file_path(self, specifier: Optional[str], content: str, file_index: int) -> str:
         """Extract file path from code block specifier or content.
         
@@ -895,7 +944,7 @@ For multiple files, provide each file separately."""
             file_index: Current file index for default naming
             
         Returns:
-            File path string
+            File path string (sanitized and validated)
         """
         # Common programming language tags (not file paths)
         language_tags = {
@@ -925,7 +974,7 @@ For multiple files, provide each file separately."""
                     # Remove quotes if present
                     path = path.strip('"\'`')
                     if path:
-                        return path
+                        return self._sanitize_file_path(path)
             
             # Check if it looks like a file path
             # Path indicators: contains /, \, or has file extension pattern
@@ -946,15 +995,21 @@ For multiple files, provide each file separately."""
             if (has_path_separator or has_extension) and specifier_lower not in language_tags:
                 # Return decoded version if it's different and valid
                 if decoded_specifier != specifier and (has_path_separator or has_extension):
-                    return decoded_specifier
-                return specifier
+                    return self._sanitize_file_path(decoded_specifier)
+                return self._sanitize_file_path(specifier)
             
-            # If it's a known language tag, don't use it as path
+            # If it's a known language tag or a description (neither path nor language), ignore it
             if specifier_lower in language_tags:
                 specifier = None  # Treat as language tag, not path
+            else:
+                # Specifier is neither a path nor a language tag - likely a description
+                # Ignore it and fall through to content extraction or default naming
+                specifier = None
         
         # Try to extract path from content
         # Look for patterns like "file: path", "path: path", "create: path"
+        # Limit search to first 500 chars to avoid false matches in large code blocks
+        content_preview = content[:500] if len(content) > 500 else content
         path_patterns = [
             r'(?:file|path|create|save|write)[:\s]+([^\s\n]+(?:\s+[^\s\n]+)*)',  # Handles paths with spaces
             r'#\s*(?:file|path|create)[:\s]+([^\n]+)',  # Comment-based path hints
@@ -963,20 +1018,22 @@ For multiple files, provide each file separately."""
         ]
         
         for pattern in path_patterns:
-            path_match = re.search(pattern, content, re.IGNORECASE)
+            path_match = re.search(pattern, content_preview, re.IGNORECASE)
             if path_match:
                 extracted_path = path_match.group(1).strip()
                 # Clean up common prefixes/suffixes
                 extracted_path = re.sub(r'^(?:file|path|create|save|write)[:\s]+', '', extracted_path, flags=re.IGNORECASE)
                 extracted_path = extracted_path.strip('"\'`<>')
-                if extracted_path:
-                    return extracted_path
+                # Limit extracted path length to avoid false matches
+                if extracted_path and len(extracted_path) <= 200:
+                    return self._sanitize_file_path(extracted_path)
         
         # Try to infer file extension from content (language detection)
         inferred_ext = self._infer_file_extension(content)
         
         # Default: generate a name based on index with inferred extension
-        return f"generated_{file_index}{inferred_ext}"
+        result = f"generated_{file_index}{inferred_ext}"
+        return result
     
     def _infer_file_extension(self, content: str) -> str:
         """Infer file extension from code content.
@@ -1060,6 +1117,7 @@ Provide test cases and validation steps. If tests exist, suggest running them. I
             response = call_llm(
                 prompt=prompt,
                 system_prompt=system_prompt,
+                model=self.model,  # Use stored model preference
                 task_type="testing"
             )
             

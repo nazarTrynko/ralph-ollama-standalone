@@ -190,10 +190,10 @@ def load_and_validate_config(config_path: Path) -> Dict[str, Any]:
     
     Args:
         config_path: Path to configuration file
-        
+    
     Returns:
         Validated configuration dictionary
-        
+    
     Raises:
         FileNotFoundError: If config file doesn't exist
         json.JSONDecodeError: If config is not valid JSON

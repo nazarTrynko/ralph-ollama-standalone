@@ -895,6 +895,14 @@
                             </div>
 
                             <div class="form-group">
+                                <label for="ralphModel">Model (optional):</label>
+                                <select id="ralphModel" name="ralphModel">
+                                    <option value="">Auto-select (based on task)</option>
+                                </select>
+                                <small style="color: #999;">Leave empty to auto-select based on task type, or choose a specific model</small>
+                            </div>
+
+                            <div class="form-group">
                                 <label>Execution Mode:</label>
                                 <div class="radio-group">
                                     <div class="radio-option">
@@ -1107,18 +1115,27 @@
         function updateModelList(availableModels) {
             models = availableModels;
             const modelSelect = document.getElementById('model');
+            const ralphModelSelect = document.getElementById('ralphModel');
             
             // Clear existing options except the first one
             while (modelSelect.options.length > 1) {
                 modelSelect.remove(1);
             }
+            while (ralphModelSelect.options.length > 1) {
+                ralphModelSelect.remove(1);
+            }
 
-            // Add available models
+            // Add available models to both selects
             availableModels.forEach(model => {
                 const option = document.createElement('option');
                 option.value = model;
                 option.textContent = model;
                 modelSelect.appendChild(option);
+                
+                const ralphOption = document.createElement('option');
+                ralphOption.value = model;
+                ralphOption.textContent = model;
+                ralphModelSelect.appendChild(ralphOption);
             });
         }
 
@@ -1615,6 +1632,7 @@
             const description = document.getElementById('projectDescription').value;
             const initialTask = document.getElementById('initialTask').value;
             const mode = document.querySelector('input[name="mode"]:checked').value;
+            const model = document.getElementById('ralphModel').value || null;
 
             const startBtn = document.getElementById('startRalphBtn');
             startBtn.disabled = true;
@@ -1630,7 +1648,8 @@
                         project_name: projectName,
                         description: description,
                         initial_task: initialTask || null,
-                        mode: mode
+                        mode: mode,
+                        model: model
                     })
                 });
 
