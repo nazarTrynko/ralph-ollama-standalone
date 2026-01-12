@@ -1,0 +1,69 @@
+{
+  "server": {
+    "host": "localhost",
+    "port": 11434,
+    "baseUrl": "http://localhost:11434",
+    "timeout": 300
+  },
+  "defaultModel": "llama3.2",
+  "models": {
+    "llama3.2": {
+      "name": "llama3.2",
+      "contextWindow": 8192,
+      "recommendedTasks": ["implementation", "code-review", "documentation"],
+      "parameters": {
+        "temperature": 0.7,
+        "topP": 0.9,
+        "topK": 40,
+        "repeatPenalty": 1.1,
+        "numPredict": 4096
+      }
+    },
+    "codellama": {
+      "name": "codellama",
+      "contextWindow": 16384,
+      "recommendedTasks": ["code-generation", "refactoring", "debugging"],
+      "parameters": {
+        "temperature": 0.3,
+        "topP": 0.95,
+        "topK": 40,
+        "repeatPenalty": 1.1,
+        "numPredict": 8192
+      }
+    },
+    "mistral": {
+      "name": "mistral",
+      "contextWindow": 8192,
+      "recommendedTasks": ["architecture", "planning", "analysis"],
+      "parameters": {
+        "temperature": 0.7,
+        "topP": 0.9,
+        "topK": 40,
+        "repeatPenalty": 1.1,
+        "numPredict": 4096
+      }
+    },
+    "phi3": {
+      "name": "phi3",
+      "contextWindow": 4096,
+      "recommendedTasks": ["quick-tasks", "simple-fixes", "documentation"],
+      "parameters": {
+        "temperature": 0.7,
+        "topP": 0.9,
+        "topK": 40,
+        "repeatPenalty": 1.1,
+        "numPredict": 2048
+      }
+    }
+  },
+  "retry": {
+    "maxAttempts": 3,
+    "backoffMs": 1000,
+    "exponentialBackoff": true
+  },
+  "cache": {
+    "enabled": true,
+    "ttlSeconds": 3600,
+    "maxSize": 100
+  }
+}

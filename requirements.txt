@@ -1,0 +1,8 @@
+# Python Dependencies for Ralph Ollama Integration
+#
+# Install with: pip install -r requirements.txt
+
+# HTTP requests for Ollama API
+requests>=2.31.0
+
+# Note: Python 3.8+ required

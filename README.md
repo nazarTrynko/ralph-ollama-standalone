@@ -1,0 +1,124 @@
+# Ralph Ollama - Standalone Project
+
+> Complete Ralph Ollama integration - standalone version
+
+This is a standalone copy of the Ralph Ollama integration, ready to use independently.
+
+---
+
+## Quick Start
+
+```bash
+# Install dependencies
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Verify Ollama is running
+curl http://localhost:11434/api/tags
+
+# Test the integration
+python3 tests/test_connection.py
+
+# Run examples
+python3 examples/ralph_workflow_demo.py
+```
+
+---
+
+## Project Structure
+
+```
+ralph-ollama-standalone/
+├── README.md                 # This file
+├── QUICK-START.md            # Quick start guide
+├── USAGE.md                  # Usage patterns
+├── config/                   # Configuration files
+│   ├── ollama-config.json
+│   └── workflow-config.json
+├── lib/                      # Python library
+│   ├── config.py
+│   ├── ollama_client.py
+│   └── __init__.py
+├── integration/              # High-level adapter
+│   ├── ralph_ollama_adapter.py
+│   └── README.md
+├── examples/                 # Example scripts
+│   ├── simple_example.py
+│   ├── ralph_workflow_demo.py
+│   └── create_something.py
+├── scripts/                  # Shell scripts
+│   ├── setup-ollama.sh
+│   ├── model-manager.sh
+│   └── ralph-ollama.sh
+├── tests/                     # Test utilities
+│   └── test_connection.py
+├── docs/                      # Documentation
+│   ├── SETUP.md
+│   ├── MODEL-GUIDE.md
+│   ├── INTEGRATION.md
+│   └── TROUBLESHOOTING.md
+└── requirements.txt          # Python dependencies
+```
+
+---
+
+## Usage
+
+### Basic Usage
+
+```python
+import sys
+from pathlib import Path
+
+# Add lib to path
+sys.path.insert(0, 'lib')
+sys.path.insert(0, 'integration')
+
+from ralph_ollama_adapter import call_llm
+
+# Use it
+response = call_llm("Your prompt", task_type="implementation")
+print(response)
+```
+
+### Environment Variables
+
+```bash
+export RALPH_LLM_PROVIDER=ollama
+export RALPH_LLM_MODEL=llama3.2:latest
+export RALPH_OLLAMA_CONFIG=./config/ollama-config.json
+```
+
+---
+
+## Requirements
+
+- Python 3.8+
+- Ollama server running (localhost:11434)
+- At least one model pulled (e.g., `ollama pull llama3.2`)
+- `requests` module (install via `pip install -r requirements.txt`)
+
+---
+
+## Documentation
+
+- **Quick Start:** [QUICK-START.md](QUICK-START.md)
+- **Usage Guide:** [USAGE.md](USAGE.md)
+- **Setup:** [docs/SETUP.md](docs/SETUP.md)
+- **Integration:** [docs/INTEGRATION.md](docs/INTEGRATION.md)
+- **Troubleshooting:** [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+
+---
+
+## Status
+
+✅ Complete and ready to use  
+✅ All files copied from original integration  
+✅ Standalone - no dependencies on parent project
+
+---
+
+**Version:** 1.0.0  
+**Source:** Copied from `.cursor/ralph-ollama/` in self-app project  
+**Date:** 2024-01-12

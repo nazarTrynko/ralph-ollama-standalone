@@ -1,0 +1,53 @@
+{
+  "ralph": {
+    "rulesPath": ".cursor/rules",
+    "specsPath": "specs",
+    "fixPlanPath": "@fix_plan.md",
+    "agentPath": "@AGENT.md"
+  },
+  "ollama": {
+    "enabled": true,
+    "fallbackToCloud": false,
+    "fallbackProvider": "openai",
+    "cacheResponses": true,
+    "streamResponses": false
+  },
+  "performance": {
+    "timeoutSeconds": 300,
+    "maxRetries": 3,
+    "enableParallelRequests": false
+  },
+  "workflow": {
+    "autoSelectModel": true,
+    "modelSelectionStrategy": "task-based",
+    "tasks": {
+      "implementation": {
+        "preferredModel": "codellama",
+        "fallbackModel": "llama3.2"
+      },
+      "testing": {
+        "preferredModel": "llama3.2",
+        "fallbackModel": "phi3"
+      },
+      "documentation": {
+        "preferredModel": "llama3.2",
+        "fallbackModel": "phi3"
+      },
+      "code-review": {
+        "preferredModel": "codellama",
+        "fallbackModel": "llama3.2"
+      },
+      "refactoring": {
+        "preferredModel": "codellama",
+        "fallbackModel": "mistral"
+      }
+    }
+  },
+  "logging": {
+    "enabled": true,
+    "level": "info",
+    "logPath": "state/logs/",
+    "logRequests": false,
+    "logResponses": false
+  }
+}
