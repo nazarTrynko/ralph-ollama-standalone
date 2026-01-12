@@ -8,15 +8,12 @@ import sys
 import json
 from pathlib import Path
 
-# Add lib to path
-lib_path = Path(__file__).parent.parent / 'lib'
-integration_path = Path(__file__).parent.parent / 'integration'
-if str(lib_path) not in sys.path:
-    sys.path.insert(0, str(lib_path))
-if str(integration_path) not in sys.path:
-    sys.path.insert(0, str(integration_path))
+# Add project root to path to enable package imports
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
-from ralph_ollama_adapter import call_llm, RalphOllamaAdapter
+from integration.ralph_ollama_adapter import call_llm, RalphOllamaAdapter
 
 
 def read_fix_plan(plan_path='@fix_plan.md'):

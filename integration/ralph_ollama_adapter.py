@@ -11,13 +11,13 @@ import sys
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-# Add lib to path for imports
-lib_path = Path(__file__).parent.parent / 'lib'
-if str(lib_path) not in sys.path:
-    sys.path.insert(0, str(lib_path))
+# Add project root to path to enable package imports
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
-from ollama_client import OllamaClient
-from config import is_ollama_enabled, get_config_path, DEFAULT_CONFIG_PATH
+from lib.ollama_client import OllamaClient
+from lib.config import is_ollama_enabled, get_config_path, DEFAULT_CONFIG_PATH
 
 
 class RalphOllamaAdapter:
@@ -170,7 +170,7 @@ def call_llm(
     
     # Fallback: would use cloud API here
     # For now, raise error to indicate Ollama should be configured
-    from config import ENV_PROVIDER, ENV_CONFIG
+    from lib.config import ENV_PROVIDER, ENV_CONFIG
     raise RuntimeError(
         f"Ollama not configured. Set {ENV_PROVIDER}=ollama and "
         f"{ENV_CONFIG} environment variables."

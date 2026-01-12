@@ -9,7 +9,10 @@ This is a standalone copy of the Ralph Ollama integration, ready to use independ
 ## Quick Start
 
 ```bash
-# Install dependencies
+# Setup virtual environment and install dependencies
+./setup-venv.sh
+
+# Or manually:
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -22,6 +25,13 @@ python3 tests/test_connection.py
 
 # Run examples
 python3 examples/ralph_workflow_demo.py
+
+# Or start the web UI to test interactively
+python3 ui/app.py
+# Then open http://localhost:5001 in your browser
+
+# Or continuously improve your code
+python3 scripts/improve-code.py --once --max-files 5
 ```
 
 ---
@@ -47,6 +57,10 @@ ralph-ollama-standalone/
 │   ├── simple_example.py
 │   ├── ralph_workflow_demo.py
 │   └── create_something.py
+├── ui/                       # Web UI for testing
+│   ├── app.py               # Flask server
+│   ├── templates/           # HTML templates
+│   └── README.md            # UI documentation
 ├── scripts/                  # Shell scripts
 │   ├── setup-ollama.sh
 │   ├── model-manager.sh

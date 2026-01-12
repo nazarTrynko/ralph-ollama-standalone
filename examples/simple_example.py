@@ -6,12 +6,12 @@ Simple example of using OllamaClient with Ralph workflow.
 import sys
 from pathlib import Path
 
-# Add lib to path
-lib_path = Path(__file__).parent.parent / 'lib'
-if str(lib_path) not in sys.path:
-    sys.path.insert(0, str(lib_path))
+# Add project root to path to enable package imports
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
-from ollama_client import OllamaClient, get_llm_response
+from lib.ollama_client import OllamaClient, get_llm_response
 
 
 def example_basic_usage():

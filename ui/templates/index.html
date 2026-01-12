@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ralph Ollama - Local UI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .status-bar {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .status-connected {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-connected .status-dot {
+            background: #28a745;
+        }
+
+        .status-disconnected .status-dot {
+            background: #dc3545;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .panel h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        select, textarea, input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+
+        select:focus, textarea:focus, input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        textarea {
+            min-height: 150px;
+            resize: vertical;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .response-area {
+            min-height: 300px;
+            max-height: 600px;
+            overflow-y: auto;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .response-area:empty::before {
+            content: "Response will appear here...";
+            color: #999;
+            font-style: italic;
+        }
+
+        .metadata {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .metadata-item {
+            margin-bottom: 5px;
+        }
+
+        .metadata-label {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Ralph Ollama - Local UI</h1>
+            <p>Test your Ollama integration and see responses in real-time</p>
+            <div class="status-bar" id="statusBar">
+                <div class="status-indicator status-disconnected" id="connectionStatus">
+                    <span class="status-dot"></span>
+                    <span>Checking connection...</span>
+                </div>
+                <div id="serverInfo"></div>
+                <div id="modelInfo"></div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="panel">
+                <h2>📝 Send Prompt</h2>
+                <form id="promptForm">
+                    <div class="form-group">
+                        <label for="model">Model:</label>
+                        <select id="model" name="model">
+                            <option value="">Auto-select (based on task)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="taskType">Task Type (for auto-selection):</label>
+                        <select id="taskType" name="taskType">
+                            <option value="">None</option>
+                            <option value="implementation">Implementation</option>
+                            <option value="testing">Testing</option>
+                            <option value="documentation">Documentation</option>
+                            <option value="code-review">Code Review</option>
+                            <option value="refactoring">Refactoring</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="systemPrompt">System Prompt (optional):</label>
+                        <textarea id="systemPrompt" name="systemPrompt" placeholder="You are a helpful AI assistant..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="prompt">Your Prompt:</label>
+                        <textarea id="prompt" name="prompt" required placeholder="Write a Python function to calculate fibonacci numbers..."></textarea>
+                    </div>
+
+                    <button type="submit" class="btn" id="submitBtn">
+                        Send to Ollama
+                    </button>
+                </form>
+            </div>
+
+            <div class="panel">
+                <h2>💬 Response</h2>
+                <div class="response-area" id="responseArea"></div>
+                <div class="metadata" id="metadata" style="display: none;">
+                    <div class="metadata-item">
+                        <span class="metadata-label">Model:</span> <span id="responseModel">-</span>
+                    </div>
+                    <div class="metadata-item">
+                        <span class="metadata-label">Provider:</span> <span id="responseProvider">-</span>
+                    </div>
+                    <div class="metadata-item">
+                        <span class="metadata-label">Tokens:</span> <span id="responseTokens">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let models = [];
+        let status = { connected: false };
+
+        // Check status on load
+        async function checkStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                status = data;
+                
+                updateStatusUI(data);
+                updateModelList(data.models || []);
+            } catch (error) {
+                console.error('Error checking status:', error);
+                updateStatusUI({ connected: false, error: error.message });
+            }
+        }
+
+        function updateStatusUI(data) {
+            const statusEl = document.getElementById('connectionStatus');
+            const serverInfo = document.getElementById('serverInfo');
+            const modelInfo = document.getElementById('modelInfo');
+
+            if (data.connected) {
+                statusEl.className = 'status-indicator status-connected';
+                statusEl.innerHTML = '<span class="status-dot"></span><span>Connected to Ollama</span>';
+                serverInfo.textContent = `Server: ${data.server_url || 'localhost:11434'}`;
+                modelInfo.textContent = `Default: ${data.default_model || 'N/A'}`;
+            } else {
+                statusEl.className = 'status-indicator status-disconnected';
+                statusEl.innerHTML = '<span class="status-dot"></span><span>Not Connected</span>';
+                serverInfo.textContent = data.error || 'Ollama server not running';
+                modelInfo.textContent = '';
+            }
+        }
+
+        function updateModelList(availableModels) {
+            models = availableModels;
+            const modelSelect = document.getElementById('model');
+            
+            // Clear existing options except the first one
+            while (modelSelect.options.length > 1) {
+                modelSelect.remove(1);
+            }
+
+            // Add available models
+            availableModels.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                modelSelect.appendChild(option);
+            });
+        }
+
+        // Handle form submission
+        document.getElementById('promptForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const prompt = document.getElementById('prompt').value;
+            const model = document.getElementById('model').value;
+            const taskType = document.getElementById('taskType').value;
+            const systemPrompt = document.getElementById('systemPrompt').value;
+
+            const submitBtn = document.getElementById('submitBtn');
+            const responseArea = document.getElementById('responseArea');
+            const metadata = document.getElementById('metadata');
+
+            // Disable button and show loading
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="loading"></span> Generating...';
+            responseArea.textContent = 'Generating response...';
+            metadata.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        prompt,
+                        model: model || null,
+                        task_type: taskType || null,
+                        system_prompt: systemPrompt || null
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    responseArea.textContent = data.response;
+                    document.getElementById('responseModel').textContent = data.model || 'N/A';
+                    document.getElementById('responseProvider').textContent = data.provider || 'ollama';
+                    
+                    if (data.tokens) {
+                        const tokens = data.tokens;
+                        const tokenText = tokens.total 
+                            ? `${tokens.total} total (${tokens.prompt || 0} prompt + ${tokens.completion || 0} completion)`
+                            : 'N/A';
+                        document.getElementById('responseTokens').textContent = tokenText;
+                    } else {
+                        document.getElementById('responseTokens').textContent = 'N/A';
+                    }
+                    
+                    metadata.style.display = 'block';
+                } else {
+                    responseArea.innerHTML = `<div class="error">Error: ${data.error || 'Unknown error'}</div>`;
+                }
+            } catch (error) {
+                responseArea.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Send to Ollama';
+            }
+        });
+
+        // Check status every 5 seconds
+        checkStatus();
+        setInterval(checkStatus, 5000);
+    </script>
+</body>
+</html>
