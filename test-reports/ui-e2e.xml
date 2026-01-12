@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuite name="UI E2E Tests" tests="7" failures="1" errors="0" time="0" timestamp="2026-01-12T12:32:16.596939">
+  <testcase name="Homepage loads" classname="UITestRunner" />
+  <testcase name="Status endpoint structure" classname="UITestRunner" />
+  <testcase name="Models endpoint" classname="UITestRunner" />
+  <testcase name="Error handling - missing prompt" classname="UITestRunner" />
+  <testcase name="Error handling - invalid JSON" classname="UITestRunner" />
+  <testcase name="Generate - Simple prompt" classname="UITestRunner" />
+  <testcase name="Generate - Prompt with task type" classname="UITestRunner">
+    <failure message="('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))">('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))</failure>
+  </testcase>
+</testsuite>

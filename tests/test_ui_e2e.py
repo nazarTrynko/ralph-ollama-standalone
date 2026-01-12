@@ -10,8 +10,10 @@ import json
 import requests
 import subprocess
 import signal
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional, Dict, Any
+from datetime import datetime
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -370,6 +372,37 @@ class UITestRunner:
             if start_server:
                 self.stop_server()
     
+    def generate_junit_xml(self, output_path: str) -> None:
+        """Generate JUnit XML report.
+        
+        Args:
+            output_path: Path to write JUnit XML file
+        """
+        testsuite = ET.Element('testsuite')
+        testsuite.set('name', 'UI E2E Tests')
+        testsuite.set('tests', str(len(self.results['tests'])))
+        testsuite.set('failures', str(self.results['failed']))
+        testsuite.set('errors', '0')
+        testsuite.set('time', '0')
+        testsuite.set('timestamp', datetime.now().isoformat())
+        
+        for test in self.results['tests']:
+            testcase = ET.SubElement(testsuite, 'testcase')
+            testcase.set('name', test['name'])
+            testcase.set('classname', 'UITestRunner')
+            
+            if test['status'] == 'FAIL':
+                failure = ET.SubElement(testcase, 'failure')
+                failure.set('message', test.get('error', 'Test failed'))
+                failure.text = test.get('error', '')
+            elif test['status'] == 'WARN':
+                skipped = ET.SubElement(testcase, 'skipped')
+                skipped.set('message', test.get('message', 'Warning'))
+        
+        tree = ET.ElementTree(testsuite)
+        ET.indent(tree, space='  ')
+        tree.write(output_path, encoding='utf-8', xml_declaration=True)
+    
     def print_summary(self):
         """Print test summary."""
         self.log("\n" + "=" * 70, BLUE)
@@ -418,11 +451,21 @@ def main():
                        help='Assume server is already running')
     parser.add_argument('--timeout', type=int, default=30,
                        help='Request timeout in seconds (default: 30)')
+    parser.add_argument('--junit-xml', type=str, default=None,
+                       help='Path to write JUnit XML report (optional)')
     
     args = parser.parse_args()
     
     runner = UITestRunner(base_url=args.url, timeout=args.timeout)
     exit_code = runner.run_all_tests(start_server=not args.no_start_server)
+    
+    # Generate JUnit XML if requested
+    if args.junit_xml:
+        try:
+            runner.generate_junit_xml(args.junit_xml)
+            print(f"✅ JUnit XML report written to: {args.junit_xml}")
+        except Exception as e:
+            print(f"⚠️  Failed to generate JUnit XML: {e}", file=sys.stderr)
     
     sys.exit(exit_code)
 

@@ -9,4 +9,10 @@ requests>=2.31.0
 flask>=2.3.0
 flask-cors>=4.0.0
 
+# Browser automation for E2E tests (optional - only needed for browser tests)
+playwright>=1.40.0
+
 # Note: Python 3.8+ required
+# 
+# After installing requirements, install Playwright browsers:
+# playwright install chromium

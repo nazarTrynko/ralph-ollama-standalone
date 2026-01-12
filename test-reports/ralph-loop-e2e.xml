@@ -1,0 +1,27 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuite name="Ralph Loop E2E Tests" tests="18" failures="3" errors="0" time="0" timestamp="2026-01-12T12:32:30.912936">
+  <testcase name="Start - Start with phase-by-phase mode" classname="RalphLoopE2ETestRunner" />
+  <testcase name="Start - Start with non-stop mode" classname="RalphLoopE2ETestRunner" />
+  <testcase name="Status endpoint structure" classname="RalphLoopE2ETestRunner" />
+  <testcase name="Project initialization - README.md exists" classname="RalphLoopE2ETestRunner" />
+  <testcase name="Project initialization - @fix_plan.md exists" classname="RalphLoopE2ETestRunner" />
+  <testcase name="Files endpoint structure" classname="RalphLoopE2ETestRunner" />
+  <testcase name="Pause" classname="RalphLoopE2ETestRunner" />
+  <testcase name="Resume" classname="RalphLoopE2ETestRunner" />
+  <testcase name="Mode switch (phase_by_phase → non_stop)" classname="RalphLoopE2ETestRunner" />
+  <testcase name="Stop endpoint" classname="RalphLoopE2ETestRunner" />
+  <testcase name="Error handling - Start without project name" classname="RalphLoopE2ETestRunner" />
+  <testcase name="Error handling - Status without session_id" classname="RalphLoopE2ETestRunner">
+    <failure message="Expected 400, got 405">Expected 400, got 405</failure>
+  </testcase>
+  <testcase name="Error handling - Status with invalid session_id" classname="RalphLoopE2ETestRunner">
+    <failure message="Expected 404, got 405">Expected 404, got 405</failure>
+  </testcase>
+  <testcase name="Error handling - Pause without session_id" classname="RalphLoopE2ETestRunner" />
+  <testcase name="Error handling - Resume without session_id" classname="RalphLoopE2ETestRunner" />
+  <testcase name="Error handling - Stop without session_id" classname="RalphLoopE2ETestRunner" />
+  <testcase name="Error handling - Mode switch without session_id" classname="RalphLoopE2ETestRunner" />
+  <testcase name="Error handling - Files without session_id" classname="RalphLoopE2ETestRunner">
+    <failure message="Expected 400, got 405">Expected 400, got 405</failure>
+  </testcase>
+</testsuite>

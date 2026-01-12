@@ -1,10 +1,13 @@
-name: Tests
+name: Unit Tests
 
 on:
   push:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
+
+# Note: E2E tests run in separate e2e.yml workflow
+# which includes Ollama server setup and model installation
 
 jobs:
   test:
@@ -28,8 +31,9 @@ jobs:
     
     - name: Run tests
       run: |
-        pytest tests/ -v --tb=short -k "not test_ui_e2e" || true
-        # E2E tests require Ollama server, skip in CI unless Ollama is available
+        pytest tests/ -v --tb=short -k "not test_ui_e2e and not test_ralph_loop_e2e" || true
+        # E2E tests (test_ui_e2e, test_ralph_loop_e2e) run in separate e2e.yml workflow
+        # which includes Ollama server setup
       env:
         # Tests that don't require Ollama server should pass
         RALPH_LLM_PROVIDER: ollama

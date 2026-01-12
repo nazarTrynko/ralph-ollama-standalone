@@ -6,6 +6,8 @@ Shows connection status, allows sending prompts, and displays responses.
 
 import sys
 import os
+import json
+import time
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 from flask import Flask, render_template, request, jsonify, Response
@@ -27,13 +29,18 @@ from lib.exceptions import (
     OllamaTimeoutError,
 )
 from integration.ralph_ollama_adapter import RalphOllamaAdapter, call_llm
+from lib.ralph_loop_engine import RalphLoopEngine, LoopMode, Phase
 
 app = Flask(__name__)
 CORS(app)
+app.secret_key = os.urandom(24)  # For session management
 
 # Initialize clients
 ollama_client: Optional[OllamaClient] = None
 adapter: Optional[RalphOllamaAdapter] = None
+
+# Ralph loop engines (keyed by session ID or project path)
+ralph_loops: Dict[str, RalphLoopEngine] = {}
 
 def init_clients() -> None:
     """Initialize Ollama clients."""
@@ -256,6 +263,314 @@ def list_models() -> Tuple[Response, int]:
             'error': str(e),
             'error_type': 'unknown'
         }), 500
+
+
+# Ralph Loop API Endpoints
+
+@app.route('/api/ralph/start', methods=['POST'])
+def ralph_start() -> Tuple[Response, int]:
+    """Start a new Ralph loop for a project idea."""
+    try:
+        if not request.is_json:
+            return jsonify({'error': 'Request must be JSON', 'success': False}), 400
+        
+        data = request.json or {}
+        project_name = data.get('project_name', '')
+        description = data.get('description', '')
+        initial_task = data.get('initial_task', '')
+        mode_str = data.get('mode', 'phase_by_phase')
+        project_path = data.get('project_path', None)
+        
+        if not project_name:
+            return jsonify({'error': 'Project name is required', 'success': False}), 400
+        if not description:
+            return jsonify({'error': 'Description is required', 'success': False}), 400
+        
+        # Determine project path
+        if project_path:
+            project_dir = Path(project_path)
+        else:
+            # Create in a projects directory
+            projects_dir = project_root / 'projects'
+            projects_dir.mkdir(exist_ok=True)
+            # Sanitize project name for filesystem
+            safe_name = "".join(c for c in project_name if c.isalnum() or c in (' ', '-', '_')).strip()
+            safe_name = safe_name.replace(' ', '_')
+            project_dir = projects_dir / safe_name
+        
+        # Check if adapter is available
+        if not adapter or not adapter.check_available():
+            return jsonify({
+                'error': 'Ollama adapter not available. Check server connection.',
+                'success': False
+            }), 503
+        
+        # Create or get loop engine
+        session_id = str(project_dir)
+        if session_id in ralph_loops:
+            # Stop existing loop if running
+            ralph_loops[session_id].stop()
+        
+        loop_engine = RalphLoopEngine(project_dir, adapter)
+        ralph_loops[session_id] = loop_engine
+        
+        # Initialize project
+        loop_engine.initialize_project(
+            project_name=project_name,
+            description=description,
+            initial_task=initial_task if initial_task else None
+        )
+        
+        # Determine mode
+        mode = LoopMode.PHASE_BY_PHASE if mode_str == 'phase_by_phase' else LoopMode.NON_STOP
+        
+        # Start loop
+        loop_engine.start(mode=mode)
+        
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'project_path': str(project_dir),
+            'mode': mode.value
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': f'Failed to start loop: {str(e)}',
+            'success': False
+        }), 500
+
+
+@app.route('/api/ralph/status', methods=['GET'])
+def ralph_status() -> Tuple[Response, int]:
+    """Get current loop status."""
+    try:
+        session_id = request.args.get('session_id')
+        if not session_id:
+            return jsonify({'error': 'session_id is required', 'success': False}), 400
+        
+        if session_id not in ralph_loops:
+            return jsonify({
+                'error': 'Loop not found',
+                'success': False
+            }), 404
+        
+        loop_engine = ralph_loops[session_id]
+        status = loop_engine.get_status()
+        
+        return jsonify({
+            'success': True,
+            'status': status
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': f'Failed to get status: {str(e)}',
+            'success': False
+        }), 500
+
+
+@app.route('/api/ralph/pause', methods=['POST'])
+def ralph_pause() -> Tuple[Response, int]:
+    """Pause execution."""
+    try:
+        if not request.is_json:
+            return jsonify({'error': 'Request must be JSON', 'success': False}), 400
+        
+        data = request.json or {}
+        session_id = data.get('session_id')
+        
+        if not session_id:
+            return jsonify({'error': 'session_id is required', 'success': False}), 400
+        
+        if session_id not in ralph_loops:
+            return jsonify({
+                'error': 'Loop not found',
+                'success': False
+            }), 404
+        
+        ralph_loops[session_id].pause()
+        
+        return jsonify({'success': True})
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': f'Failed to pause: {str(e)}',
+            'success': False
+        }), 500
+
+
+@app.route('/api/ralph/resume', methods=['POST'])
+def ralph_resume() -> Tuple[Response, int]:
+    """Resume execution with optional user input."""
+    try:
+        if not request.is_json:
+            return jsonify({'error': 'Request must be JSON', 'success': False}), 400
+        
+        data = request.json or {}
+        session_id = data.get('session_id')
+        user_input = data.get('user_input', None)
+        
+        if not session_id:
+            return jsonify({'error': 'session_id is required', 'success': False}), 400
+        
+        if session_id not in ralph_loops:
+            return jsonify({
+                'error': 'Loop not found',
+                'success': False
+            }), 404
+        
+        ralph_loops[session_id].resume(user_input=user_input)
+        
+        return jsonify({'success': True})
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': f'Failed to resume: {str(e)}',
+            'success': False
+        }), 500
+
+
+@app.route('/api/ralph/stop', methods=['POST'])
+def ralph_stop() -> Tuple[Response, int]:
+    """Stop execution."""
+    try:
+        if not request.is_json:
+            return jsonify({'error': 'Request must be JSON', 'success': False}), 400
+        
+        data = request.json or {}
+        session_id = data.get('session_id')
+        
+        if not session_id:
+            return jsonify({'error': 'session_id is required', 'success': False}), 400
+        
+        if session_id not in ralph_loops:
+            return jsonify({
+                'error': 'Loop not found',
+                'success': False
+            }), 404
+        
+        ralph_loops[session_id].stop()
+        
+        return jsonify({'success': True})
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': f'Failed to stop: {str(e)}',
+            'success': False
+        }), 500
+
+
+@app.route('/api/ralph/mode', methods=['POST'])
+def ralph_mode() -> Tuple[Response, int]:
+    """Switch between non-stop and phase-by-phase modes."""
+    try:
+        if not request.is_json:
+            return jsonify({'error': 'Request must be JSON', 'success': False}), 400
+        
+        data = request.json or {}
+        session_id = data.get('session_id')
+        mode_str = data.get('mode')
+        
+        if not session_id:
+            return jsonify({'error': 'session_id is required', 'success': False}), 400
+        if not mode_str:
+            return jsonify({'error': 'mode is required', 'success': False}), 400
+        
+        if session_id not in ralph_loops:
+            return jsonify({
+                'error': 'Loop not found',
+                'success': False
+            }), 404
+        
+        mode = LoopMode.PHASE_BY_PHASE if mode_str == 'phase_by_phase' else LoopMode.NON_STOP
+        ralph_loops[session_id].set_mode(mode)
+        
+        return jsonify({
+            'success': True,
+            'mode': mode.value
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': f'Failed to change mode: {str(e)}',
+            'success': False
+        }), 500
+
+
+@app.route('/api/ralph/files', methods=['GET'])
+def ralph_files() -> Tuple[Response, int]:
+    """Get list of files created/modified."""
+    try:
+        session_id = request.args.get('session_id')
+        if not session_id:
+            return jsonify({'error': 'session_id is required', 'success': False}), 400
+        
+        if session_id not in ralph_loops:
+            return jsonify({
+                'error': 'Loop not found',
+                'success': False
+            }), 404
+        
+        loop_engine = ralph_loops[session_id]
+        files = loop_engine.file_tracker.get_all_files()
+        changes = loop_engine.file_tracker.get_changes()
+        
+        return jsonify({
+            'success': True,
+            'files': files,
+            'changes': changes
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': f'Failed to get files: {str(e)}',
+            'success': False
+        }), 500
+
+
+@app.route('/api/ralph/stream', methods=['GET'])
+def ralph_stream() -> Response:
+    """Stream status updates using Server-Sent Events."""
+    session_id = request.args.get('session_id')
+    if not session_id or session_id not in ralph_loops:
+        return Response("session_id not found", status=404, mimetype='text/plain')
+    
+    loop_engine = ralph_loops[session_id]
+    
+    def generate():
+        last_log_count = 0
+        while True:
+            status = loop_engine.get_status()
+            current_log_count = len(status.get('status_log', []))
+            
+            # Send new log entries
+            if current_log_count > last_log_count:
+                new_entries = status['status_log'][last_log_count:]
+                for entry in new_entries:
+                    yield f"data: {json.dumps(entry)}\n\n"
+                last_log_count = current_log_count
+            
+            # Send periodic status update
+            yield f"data: {json.dumps({'type': 'status', 'data': status})}\n\n"
+            
+            time.sleep(1)  # Poll every second
+    
+    return Response(generate(), mimetype='text/event-stream')
 
 
 def main():

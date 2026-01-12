@@ -78,7 +78,8 @@ ralph-ollama-standalone/
 │   ├── SETUP.md
 │   ├── MODEL-GUIDE.md
 │   ├── INTEGRATION.md
-│   └── TROUBLESHOOTING.md
+│   ├── TROUBLESHOOTING.md
+│   └── CI_CD.md              # CI/CD documentation
 └── requirements.txt          # Python dependencies
 ```
 

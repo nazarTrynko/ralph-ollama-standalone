@@ -20,7 +20,8 @@ _All high priority tasks completed. See "Completed Tasks" section below._
 
 > Important but not blocking, enhancements, nice-to-have features
 
-_All medium priority tasks completed. See "Completed Tasks" section below._
+- [x] Create comprehensive test suite for ralph_loop_engine.py - test phase execution, task parsing, file tracking, and loop control
+- [x] Improve code block parsing in ralph_loop_engine.py - handle paths with spaces, better language/path detection, edge cases
 
 ---
 
@@ -60,10 +61,11 @@ Tasks should be specific, actionable, and include context when helpful:
 
 ### High Priority (Completed 2025-01-12)
 
-- [x] Create integration/__init__.py to make integration a proper Python package with exports
+- [x] Create integration/**init**.py to make integration a proper Python package with exports
 - [x] Add JSON schema validation and type checking for configuration files in lib/config.py and lib/ollama_client.py
 - [x] Create custom exception classes and improve error messages with context in lib/ollama_client.py, integration/ralph_ollama_adapter.py, and ui/app.py
 - [x] Add comprehensive type hints to all Python files in lib/, integration/, and ui/ directories
+- [x] Add file locking and progress indicators to code improvement script (scripts/improve-code.py) - Added cross-platform file locking, progress tracking [X/Y], timing information, and improved JSON parsing error handling
 
 ### Medium Priority (Completed 2025-01-12)
 
@@ -71,6 +73,8 @@ Tasks should be specific, actionable, and include context when helpful:
 - [x] Implement structured logging with Python logging module, create lib/logging_config.py, and add logging to client and adapter
 - [x] Create pyproject.toml for proper Python package installation and distribution
 - [x] Expand API documentation, add more examples, and improve docs/INTEGRATION.md and README.md
+- [x] Create comprehensive test suite for ralph_loop_engine.py - test phase execution, task parsing, file tracking, and loop control
+- [x] Improve code block parsing in ralph_loop_engine.py - handle paths with spaces, better language/path detection, edge cases, added 18 new test cases
 
 ### Low Priority (Completed 2025-01-12)
 

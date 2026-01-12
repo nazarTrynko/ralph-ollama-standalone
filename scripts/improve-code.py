@@ -145,30 +145,83 @@ class CodeImprover:
         print(f"   To install '{requested_model}': ollama pull {requested_model}")
         return requested_model  # Return original, let it fail with proper error
         
-    def _acquire_lock(self) -> bool:
-        """Acquire a file lock to prevent concurrent runs."""
+    def _acquire_lock(self, force: bool = False) -> bool:
+        """Acquire a file lock to prevent concurrent runs.
+        
+        Args:
+            force: If True, remove existing lock file even if process appears to be running
+            
+        Returns:
+            True if lock acquired, False otherwise
+        """
         try:
             LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
             
             # Check if lock file exists and if process is still running
             if LOCK_FILE.exists():
+                lock_age = time.time() - LOCK_FILE.stat().st_mtime
+                max_lock_age = 3600 * 24  # 24 hours - consider lock stale after this
+                
                 try:
                     with open(LOCK_FILE, 'r') as f:
-                        pid_str = f.read().strip()
+                        content = f.read().strip()
+                        parts = content.split('\n', 1)
+                        pid_str = parts[0]
+                        timestamp_str = parts[1] if len(parts) > 1 else None
+                        
                         if pid_str:
                             pid = int(pid_str)
-                            # Check if process is still running
-                            try:
-                                os.kill(pid, 0)  # Signal 0 just checks if process exists
-                                # Process exists, so lock is valid
-                                print(f"❌ Another instance is already running (PID: {pid}, lock file: {LOCK_FILE})")
-                                print(f"   If you're sure no other instance is running, delete the lock file.")
-                                return False
-                            except (OSError, ProcessLookupError):
-                                # Process doesn't exist, remove stale lock
+                            
+                            # Check if this is our own PID (stale lock from previous run)
+                            current_pid = os.getpid()
+                            if pid == current_pid:
+                                print(f"⚠️  Removing stale lock file from previous run (same PID: {pid})")
                                 LOCK_FILE.unlink()
-                except (ValueError, IOError):
+                            # Check if lock is stale (older than max_lock_age)
+                            elif lock_age > max_lock_age:
+                                print(f"⚠️  Removing stale lock file (age: {lock_age/3600:.1f} hours)")
+                                LOCK_FILE.unlink()
+                            elif force:
+                                print(f"⚠️  Force removing lock file (PID: {pid})")
+                                LOCK_FILE.unlink()
+                            else:
+                                # Check if process is still running
+                                process_running = False
+                                try:
+                                    os.kill(pid, 0)  # Signal 0 just checks if process exists
+                                    process_running = True
+                                except ProcessLookupError:
+                                    # Process doesn't exist
+                                    process_running = False
+                                except PermissionError:
+                                    # Can't check process (permission denied)
+                                    # Check if lock is old enough to be considered stale
+                                    if lock_age > 300:  # 5 minutes
+                                        print(f"⚠️  Cannot verify process (permission denied), but lock is {lock_age/60:.1f} minutes old")
+                                        print(f"   Removing potentially stale lock file")
+                                        LOCK_FILE.unlink()
+                                    else:
+                                        # Lock is recent, assume process is running
+                                        process_running = True
+                                except OSError:
+                                    # Other error, assume process doesn't exist
+                                    process_running = False
+                                
+                                if process_running:
+                                    age_str = f"{lock_age/60:.1f} minutes" if lock_age < 3600 else f"{lock_age/3600:.1f} hours"
+                                    print(f"❌ Another instance is already running (PID: {pid}, lock age: {age_str})")
+                                    print(f"   Lock file: {LOCK_FILE}")
+                                    print(f"   If you're sure no other instance is running:")
+                                    print(f"     - Delete the lock file: rm {LOCK_FILE}")
+                                    print(f"     - Or use --force flag to remove it automatically")
+                                    return False
+                                else:
+                                    # Process doesn't exist, remove stale lock
+                                    print(f"⚠️  Removing stale lock file (process {pid} not found)")
+                                    LOCK_FILE.unlink()
+                except (ValueError, IOError) as e:
                     # Invalid lock file, remove it
+                    print(f"⚠️  Removing invalid lock file: {e}")
                     LOCK_FILE.unlink()
             
             # Create lock file
@@ -177,17 +230,36 @@ class CodeImprover:
             # Try to acquire lock based on platform
             if HAS_FCNTL:
                 # Unix/Linux/macOS
-                fcntl.flock(self.lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                try:
+                    fcntl.flock(self.lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    # Another process has the lock
+                    self.lock_file.close()
+                    self.lock_file = None
+                    print(f"❌ Could not acquire lock: another process has the file locked")
+                    print(f"   Lock file: {LOCK_FILE}")
+                    print(f"   Use --force to remove the lock file")
+                    return False
             elif HAS_MSVCRT:
                 # Windows
-                msvcrt.locking(self.lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                try:
+                    msvcrt.locking(self.lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                except IOError:
+                    # Another process has the lock
+                    self.lock_file.close()
+                    self.lock_file = None
+                    print(f"❌ Could not acquire lock: another process has the file locked")
+                    print(f"   Lock file: {LOCK_FILE}")
+                    print(f"   Use --force to remove the lock file")
+                    return False
             # If neither available, we'll use file existence as lock (less safe but works)
             
-            # Write PID to lock file
-            self.lock_file.write(str(os.getpid()))
+            # Write PID and timestamp to lock file
+            timestamp = datetime.now().isoformat()
+            self.lock_file.write(f"{os.getpid()}\n{timestamp}\n")
             self.lock_file.flush()
             return True
-        except (IOError, OSError, BlockingIOError) as e:
+        except (IOError, OSError) as e:
             if self.lock_file:
                 try:
                     self.lock_file.close()
@@ -196,7 +268,7 @@ class CodeImprover:
                 self.lock_file = None
             print(f"❌ Could not acquire lock: {e}")
             print(f"   Lock file: {LOCK_FILE}")
-            print(f"   If you're sure no other instance is running, delete the lock file.")
+            print(f"   If you're sure no other instance is running, delete the lock file or use --force")
             return False
     
     def _release_lock(self):
@@ -530,11 +602,18 @@ If code is already excellent, set needs_improvement to false."""
         
         return False
     
-    def run_once(self, max_files: Optional[int] = None):
-        """Run one improvement cycle."""
-        # Acquire lock
-        if not self._acquire_lock():
-            return False
+    def run_once(self, max_files: Optional[int] = None, force: bool = False, skip_lock: bool = False):
+        """Run one improvement cycle.
+        
+        Args:
+            max_files: Maximum number of files to process
+            force: If True, force remove existing lock file
+            skip_lock: If True, skip lock acquisition (for use within run_continuous)
+        """
+        # Acquire lock (unless called from run_continuous which already has the lock)
+        if not skip_lock:
+            if not self._acquire_lock(force=force):
+                return False
         
         try:
             print("=" * 70)
@@ -568,7 +647,9 @@ If code is already excellent, set needs_improvement to false."""
             cycle_elapsed = time.time() - cycle_start
             print(f"\n⏱️  Cycle completed in {cycle_elapsed:.1f}s")
         finally:
-            self._release_lock()
+            # Only release lock if we acquired it
+            if not skip_lock:
+                self._release_lock()
         
         # Save log
         self._save_improvements_log()
@@ -584,10 +665,15 @@ If code is already excellent, set needs_improvement to false."""
         
         return True
     
-    def run_continuous(self, max_files: Optional[int] = None):
-        """Run continuously, improving code periodically."""
+    def run_continuous(self, max_files: Optional[int] = None, force: bool = False):
+        """Run continuously, improving code periodically.
+        
+        Args:
+            max_files: Maximum number of files to process per cycle
+            force: If True, force remove existing lock file
+        """
         # Acquire lock for continuous mode
-        if not self._acquire_lock():
+        if not self._acquire_lock(force=force):
             return
         
         try:
@@ -606,7 +692,8 @@ If code is already excellent, set needs_improvement to false."""
                 while True:
                     cycle += 1
                     print(f"\n🔄 Cycle #{cycle}")
-                    cycle_success = self.run_once(max_files=max_files)
+                    # Skip lock acquisition since we already have the lock
+                    cycle_success = self.run_once(max_files=max_files, skip_lock=True)
                     
                     if not cycle_success:
                         print("⚠️  Cycle failed, but continuing...")
@@ -655,15 +742,17 @@ Examples:
                        help='Ollama model to use (default: auto-select)')
     parser.add_argument('--max-files', type=int, default=None,
                        help='Maximum files to process per cycle')
+    parser.add_argument('--force', action='store_true',
+                       help='Force remove existing lock file if present')
     
     args = parser.parse_args()
     
     improver = CodeImprover(model=args.model, interval=args.interval)
     
     if args.once:
-        improver.run_once(max_files=args.max_files)
+        improver.run_once(max_files=args.max_files, force=args.force)
     else:
-        improver.run_continuous(max_files=args.max_files)
+        improver.run_continuous(max_files=args.max_files, force=args.force)
 
 
 if __name__ == '__main__':
