@@ -401,6 +401,11 @@
                     })
                 });
 
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+                    throw new Error(errorData.error || `Server error: ${response.status}`);
+                }
+
                 const data = await response.json();
 
                 if (data.success) {
@@ -423,7 +428,8 @@
                     responseArea.innerHTML = `<div class="error">Error: ${data.error || 'Unknown error'}</div>`;
                 }
             } catch (error) {
-                responseArea.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                console.error('Generation error:', error);
+                responseArea.innerHTML = `<div class="error">Error: ${error.message || 'Failed to connect to server. Make sure the Flask server is running.'}</div>`;
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Send to Ollama';

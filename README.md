@@ -32,6 +32,9 @@ python3 ui/app.py
 
 # Or continuously improve your code
 python3 scripts/improve-code.py --once --max-files 5
+
+# Run end-to-end UI tests
+python3 tests/test_ui_e2e.py
 ```
 
 ---
@@ -106,6 +109,32 @@ export RALPH_OLLAMA_CONFIG=./config/ollama-config.json
 
 ---
 
+## Installation
+
+### Option 1: Install as Package (Recommended)
+
+```bash
+# Install from source
+pip install -e .
+
+# Or install with UI dependencies
+pip install -e ".[ui]"
+
+# Or install with dev dependencies
+pip install -e ".[dev]"
+```
+
+### Option 2: Manual Setup
+
+```bash
+# Setup virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
 ## Requirements
 
 - Python 3.8+
@@ -119,6 +148,7 @@ export RALPH_OLLAMA_CONFIG=./config/ollama-config.json
 
 - **Quick Start:** [QUICK-START.md](QUICK-START.md)
 - **Usage Guide:** [USAGE.md](USAGE.md)
+- **API Reference:** [docs/API.md](docs/API.md)
 - **Setup:** [docs/SETUP.md](docs/SETUP.md)
 - **Integration:** [docs/INTEGRATION.md](docs/INTEGRATION.md)
 - **Troubleshooting:** [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)

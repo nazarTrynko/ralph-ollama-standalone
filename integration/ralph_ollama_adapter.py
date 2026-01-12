@@ -18,6 +18,15 @@ if str(project_root) not in sys.path:
 
 from lib.ollama_client import OllamaClient
 from lib.config import is_ollama_enabled, get_config_path, DEFAULT_CONFIG_PATH
+from lib.exceptions import (
+    OllamaError,
+    OllamaConnectionError,
+    OllamaModelError,
+    OllamaConfigError,
+)
+from lib.logging_config import get_logger
+
+logger = get_logger('adapter')
 
 
 class RalphOllamaAdapter:
@@ -28,10 +37,12 @@ class RalphOllamaAdapter:
     replacement for cloud-based LLM providers in Ralph workflow implementations.
     """
     
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None) -> None:
         """Initialize adapter with Ollama configuration."""
-        self.client = OllamaClient(config_path)
-        self.config_path = config_path
+        logger.debug(f"Initializing RalphOllamaAdapter with config: {config_path}")
+        self.client: OllamaClient = OllamaClient(config_path)
+        self.config_path: Optional[str] = config_path
+        logger.info("RalphOllamaAdapter initialized")
         
     def generate(
         self,
@@ -39,7 +50,7 @@ class RalphOllamaAdapter:
         system_prompt: Optional[str] = None,
         model: Optional[str] = None,
         task_type: Optional[str] = None,
-        **kwargs
+        **kwargs: Any
     ) -> Dict[str, Any]:
         """
         Generate response from Ollama.
@@ -57,7 +68,9 @@ class RalphOllamaAdapter:
         # Auto-select model based on task type if model not specified
         if model is None and task_type:
             model = self._select_model_for_task(task_type)
+            logger.debug(f"Auto-selected model '{model}' for task type '{task_type}'")
         
+        logger.info(f"Generating response: task_type={task_type}, model={model}")
         # Generate response
         result = self.client.generate(
             prompt=prompt,
@@ -111,7 +124,7 @@ class RalphOllamaAdapter:
         return self.client.default_model
 
 
-def create_ralph_llm_provider():
+def create_ralph_llm_provider() -> Optional[RalphOllamaAdapter]:
     """
     Factory function to create LLM provider based on environment.
     
@@ -171,9 +184,11 @@ def call_llm(
     # Fallback: would use cloud API here
     # For now, raise error to indicate Ollama should be configured
     from lib.config import ENV_PROVIDER, ENV_CONFIG
-    raise RuntimeError(
-        f"Ollama not configured. Set {ENV_PROVIDER}=ollama and "
-        f"{ENV_CONFIG} environment variables."
+    raise OllamaConfigError(
+        f"Ollama is not configured. To use Ollama, set the following environment variables:\n"
+        f"  {ENV_PROVIDER}=ollama\n"
+        f"  {ENV_CONFIG}=path/to/ollama-config.json\n"
+        f"Or ensure the default config file exists at: {DEFAULT_CONFIG_PATH}"
     )
 
 
