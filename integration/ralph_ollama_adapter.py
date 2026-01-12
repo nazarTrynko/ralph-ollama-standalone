@@ -17,7 +17,13 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from lib.ollama_client import OllamaClient
-from lib.config import is_ollama_enabled, get_config_path, DEFAULT_CONFIG_PATH
+from lib.config import (
+    is_ollama_enabled,
+    get_config_path,
+    get_workflow_config_path,
+    load_and_validate_config,
+    DEFAULT_CONFIG_PATH,
+)
 from lib.exceptions import (
     OllamaError,
     OllamaConnectionError,
@@ -91,29 +97,78 @@ class RalphOllamaAdapter:
     def _select_model_for_task(self, task_type: str) -> str:
         """Select appropriate model for task type."""
         # Load workflow config to get task-based model selection
+        preferred_model = None
+        fallback_model = None
         try:
-            workflow_config_path = Path(__file__).parent.parent / 'config' / 'workflow-config.json'
+            workflow_config_path = get_workflow_config_path()
             if workflow_config_path.exists():
-                import json
-                with open(workflow_config_path) as f:
-                    config = json.load(f)
+                config = load_and_validate_config(workflow_config_path)
                 
                 tasks = config.get('workflow', {}).get('tasks', {})
                 task_config = tasks.get(task_type, {})
-                return task_config.get('preferredModel') or self.client.default_model
-        except Exception:
+                preferred_model = task_config.get('preferredModel')
+                fallback_model = task_config.get('fallbackModel')
+        except Exception as e:
+            logger.debug(f"Could not load workflow config: {e}")
             pass
         
         # Fallback: simple mapping
-        model_map = {
-            'implementation': 'codellama',
-            'code-review': 'codellama',
-            'refactoring': 'codellama',
-            'testing': 'llama3.2',
-            'documentation': 'llama3.2',
-        }
+        if preferred_model is None:
+            model_map = {
+                'implementation': 'codellama',
+                'code-review': 'codellama',
+                'refactoring': 'codellama',
+                'testing': 'llama3.2',
+                'documentation': 'llama3.2',
+            }
+            preferred_model = model_map.get(task_type)
         
-        return model_map.get(task_type, self.client.default_model)
+        # Use fallback if not set
+        if fallback_model is None:
+            fallback_model = 'llama3.2'
+        
+        # Try to verify model availability and use fallback if needed
+        selected_model = preferred_model or self.client.default_model
+        if self._is_model_available(selected_model):
+            return selected_model
+        
+        # Preferred model not available, try fallback
+        if fallback_model and self._is_model_available(fallback_model):
+            logger.warning(f"Preferred model '{preferred_model}' not available, using fallback '{fallback_model}'")
+            return fallback_model
+        
+        # Fallback not available, use default
+        if self._is_model_available(self.client.default_model):
+            logger.warning(f"Fallback model '{fallback_model}' not available, using default '{self.client.default_model}'")
+            return self.client.default_model
+        
+        # Last resort: try to find any available model
+        try:
+            available_models = self.client.list_models()
+            if available_models:
+                logger.warning(f"No preferred models available, using '{available_models[0]}'")
+                return available_models[0]
+        except Exception:
+            pass
+        
+        # Return default even if not available (will fail with proper error)
+        return self.client.default_model
+    
+    def _is_model_available(self, model: str) -> bool:
+        """Check if a model is available on the server."""
+        if not self.client.check_server():
+            return False  # Can't check, assume not available
+        
+        try:
+            available_models = self.client.list_models()
+            # Check exact match or base name match
+            model_base = model.split(':')[0]
+            for available in available_models:
+                if available == model or available.startswith(model_base + ':'):
+                    return True
+            return False
+        except Exception:
+            return False  # Assume not available if we can't check
     
     def check_available(self) -> bool:
         """Check if Ollama is available and ready."""

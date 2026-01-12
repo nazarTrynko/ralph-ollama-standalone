@@ -110,8 +110,17 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
         name: Optional logger name (defaults to 'ralph_ollama')
         
     Returns:
-        Logger instance
+        Logger instance with default attributes set
     """
     if name:
-        return logging.getLogger(f'ralph_ollama.{name}')
-    return logging.getLogger('ralph_ollama')
+        logger = logging.getLogger(f'ralph_ollama.{name}')
+    else:
+        logger = logging.getLogger('ralph_ollama')
+    
+    # Ensure logger has default attributes if not set
+    if not hasattr(logger, 'log_requests'):
+        logger.log_requests = False
+    if not hasattr(logger, 'log_responses'):
+        logger.log_responses = False
+    
+    return logger

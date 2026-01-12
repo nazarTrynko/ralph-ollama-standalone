@@ -1,0 +1,28 @@
+# Include configuration files
+include config/*.json
+recursive-include config *.json
+
+# Include UI templates
+recursive-include ui/templates *.html
+recursive-include templates *.md
+
+# Include documentation
+include README.md
+include LICENSE
+include CHANGELOG.md
+include requirements.txt
+
+# Include scripts
+include scripts/*.sh
+include scripts/*.py
+
+# Include examples
+recursive-include examples *.py
+include examples/README.md
+
+# Include tests
+recursive-include tests *.py
+include tests/README.md
+
+# Include docs
+recursive-include docs *.md

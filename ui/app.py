@@ -258,7 +258,8 @@ def list_models() -> Tuple[Response, int]:
         }), 500
 
 
-if __name__ == '__main__':
+def main():
+    """Main entry point for UI server."""
     # Use port from environment or default to 5001 (5000 is often used by AirPlay on macOS)
     port = int(os.getenv('FLASK_PORT', 5001))
     
@@ -270,3 +271,7 @@ if __name__ == '__main__':
     print("\nPress Ctrl+C to stop the server")
     print("=" * 60)
     app.run(debug=True, host='0.0.0.0', port=port)
+
+
+if __name__ == '__main__':
+    main()

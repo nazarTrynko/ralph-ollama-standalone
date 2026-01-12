@@ -35,6 +35,10 @@ python3 scripts/improve-code.py --once --max-files 5
 
 # Run end-to-end UI tests
 python3 tests/test_ui_e2e.py
+
+# Or use entry points (after pip install -e .)
+ralph-ollama "Your prompt here"
+ralph-ollama-ui  # Start web UI
 ```
 
 ---
@@ -147,22 +151,27 @@ pip install -r requirements.txt
 ## Documentation
 
 - **Quick Start:** [QUICK-START.md](QUICK-START.md)
+- **Installation:** [docs/INSTALLATION.md](docs/INSTALLATION.md) - Detailed installation guide
 - **Usage Guide:** [USAGE.md](USAGE.md)
 - **API Reference:** [docs/API.md](docs/API.md)
 - **Setup:** [docs/SETUP.md](docs/SETUP.md)
 - **Integration:** [docs/INTEGRATION.md](docs/INTEGRATION.md)
 - **Troubleshooting:** [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+- **Code Improvement:** [docs/CODE-IMPROVEMENT.md](docs/CODE-IMPROVEMENT.md) - Automated code improvement
 
 ---
 
 ## Status
 
 ✅ Complete and ready to use  
-✅ All files copied from original integration  
-✅ Standalone - no dependencies on parent project
+✅ Enhanced with validation, error handling, logging, and tests  
+✅ Standalone - no dependencies on parent project  
+✅ Installable via pip: `pip install -e .`
 
 ---
 
-**Version:** 1.0.0  
+**Version:** 1.1.0  
 **Source:** Copied from `.cursor/ralph-ollama/` in self-app project  
-**Date:** 2024-01-12
+**Last Updated:** 2025-01-12
+
+**Recent Improvements:** See [IMPROVEMENTS_SUMMARY.md](IMPROVEMENTS_SUMMARY.md) for details on v1.1.0 enhancements.

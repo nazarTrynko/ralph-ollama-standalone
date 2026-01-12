@@ -9,10 +9,30 @@ import os
 import time
 import json
 import subprocess
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional
 import argparse
+
+# Cross-platform file locking
+HAS_FCNTL = False
+HAS_MSVCRT = False
+fcntl = None
+msvcrt = None
+
+try:
+    import fcntl
+    HAS_FCNTL = True
+except ImportError:
+    pass
+
+if not HAS_FCNTL:
+    try:
+        import msvcrt
+        HAS_MSVCRT = True
+    except ImportError:
+        pass
 
 # Add project root to path to enable package imports
 project_root = Path(__file__).parent.parent
@@ -20,12 +40,14 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from lib.ollama_client import OllamaClient
+from lib.exceptions import OllamaModelError
 from integration.ralph_ollama_adapter import RalphOllamaAdapter
 
 # Configuration
 PROJECT_ROOT = Path(__file__).parent.parent
 IMPROVEMENT_LOG = PROJECT_ROOT / 'state' / 'improvements.json'
-EXCLUDE_DIRS = {'.git', '__pycache__', 'venv', 'node_modules', '.cursor', 'state'}
+LOCK_FILE = PROJECT_ROOT / 'state' / '.improve-code.lock'
+EXCLUDE_DIRS = {'.git', '__pycache__', 'venv', '@venv', '.venv', 'node_modules', '.cursor', 'state'}
 EXCLUDE_FILES = {'.pyc', '.pyo', '.pyd', '.so', '.dylib'}
 PYTHON_EXTENSIONS = {'.py'}
 
@@ -42,7 +64,7 @@ class CodeImprover:
         """
         self.client = OllamaClient()
         self.adapter = RalphOllamaAdapter()
-        self.model = model
+        self.model = self._resolve_model(model)
         self.interval = interval
         self.improvements_log = self._load_improvements_log()
         self.stats = {
@@ -51,7 +73,216 @@ class CodeImprover:
             'improvements_applied': 0,
             'start_time': datetime.now().isoformat()
         }
+        self.lock_file = None
+        self.current_file_index = 0
+        self.total_files = 0
+    
+    def _resolve_model(self, requested_model: Optional[str]) -> Optional[str]:
+        """Resolve model name, checking availability and using fallback if needed.
         
+        Args:
+            requested_model: Model name requested by user (or None for auto-select)
+        
+        Returns:
+            Available model name, or None for auto-select
+        """
+        # If no model specified, let adapter auto-select
+        if requested_model is None:
+            return None
+        
+        # Check if server is available
+        if not self.client.check_server():
+            print("⚠️  Warning: Cannot check model availability (server not running)")
+            return requested_model
+        
+        # Get available models
+        try:
+            available_models = self.client.list_models()
+        except Exception as e:
+            print(f"⚠️  Warning: Could not list models: {e}")
+            return requested_model
+        
+        # Normalize model names (remove tags like :latest, :4b)
+        normalized_available = []
+        for model in available_models:
+            # Add both full name and base name
+            normalized_available.append(model)
+            base_name = model.split(':')[0]
+            if base_name != model:
+                normalized_available.append(base_name)
+        
+        # Check if requested model is available (exact match or base name match)
+        if requested_model in normalized_available:
+            return requested_model
+        
+        # Check if base name matches
+        requested_base = requested_model.split(':')[0]
+        for model in available_models:
+            if model.startswith(requested_base + ':') or model == requested_base:
+                print(f"ℹ️  Using '{model}' instead of '{requested_model}'")
+                return model
+        
+        # Model not found - try to find a suitable fallback
+        fallback_models = ['llama3.2', 'llama3', 'llama3.1', 'gemma3']
+        for fallback in fallback_models:
+            for model in available_models:
+                if model.startswith(fallback + ':') or model == fallback:
+                    print(f"⚠️  Model '{requested_model}' not found. Using fallback: '{model}'")
+                    print(f"   Available models: {', '.join(available_models)}")
+                    print(f"   To install '{requested_model}': ollama pull {requested_model}")
+                    return model
+        
+        # Last resort: use first available model
+        if available_models:
+            print(f"⚠️  Model '{requested_model}' not found. Using: '{available_models[0]}'")
+            print(f"   Available models: {', '.join(available_models)}")
+            print(f"   To install '{requested_model}': ollama pull {requested_model}")
+            return available_models[0]
+        
+        # No models available
+        print(f"❌ Error: Model '{requested_model}' not found and no fallback available")
+        print(f"   Available models: {', '.join(available_models) if available_models else 'none'}")
+        print(f"   To install '{requested_model}': ollama pull {requested_model}")
+        return requested_model  # Return original, let it fail with proper error
+        
+    def _acquire_lock(self) -> bool:
+        """Acquire a file lock to prevent concurrent runs."""
+        try:
+            LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Check if lock file exists and if process is still running
+            if LOCK_FILE.exists():
+                try:
+                    with open(LOCK_FILE, 'r') as f:
+                        pid_str = f.read().strip()
+                        if pid_str:
+                            pid = int(pid_str)
+                            # Check if process is still running
+                            try:
+                                os.kill(pid, 0)  # Signal 0 just checks if process exists
+                                # Process exists, so lock is valid
+                                print(f"❌ Another instance is already running (PID: {pid}, lock file: {LOCK_FILE})")
+                                print(f"   If you're sure no other instance is running, delete the lock file.")
+                                return False
+                            except (OSError, ProcessLookupError):
+                                # Process doesn't exist, remove stale lock
+                                LOCK_FILE.unlink()
+                except (ValueError, IOError):
+                    # Invalid lock file, remove it
+                    LOCK_FILE.unlink()
+            
+            # Create lock file
+            self.lock_file = open(LOCK_FILE, 'w')
+            
+            # Try to acquire lock based on platform
+            if HAS_FCNTL:
+                # Unix/Linux/macOS
+                fcntl.flock(self.lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            elif HAS_MSVCRT:
+                # Windows
+                msvcrt.locking(self.lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+            # If neither available, we'll use file existence as lock (less safe but works)
+            
+            # Write PID to lock file
+            self.lock_file.write(str(os.getpid()))
+            self.lock_file.flush()
+            return True
+        except (IOError, OSError, BlockingIOError) as e:
+            if self.lock_file:
+                try:
+                    self.lock_file.close()
+                except Exception:
+                    pass
+                self.lock_file = None
+            print(f"❌ Could not acquire lock: {e}")
+            print(f"   Lock file: {LOCK_FILE}")
+            print(f"   If you're sure no other instance is running, delete the lock file.")
+            return False
+    
+    def _release_lock(self):
+        """Release the file lock."""
+        if self.lock_file:
+            try:
+                if HAS_FCNTL:
+                    fcntl.flock(self.lock_file.fileno(), fcntl.LOCK_UN)
+                elif HAS_MSVCRT:
+                    msvcrt.locking(self.lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                self.lock_file.close()
+            except Exception:
+                pass
+            self.lock_file = None
+        
+        # Remove lock file
+        try:
+            if LOCK_FILE.exists():
+                LOCK_FILE.unlink()
+        except Exception:
+            pass
+    
+    def _fix_json_escapes(self, json_str: str) -> str:
+        """Fix invalid escape sequences in JSON string."""
+        # Replace invalid escape sequences with valid ones
+        # Common issues: \x without hex, \ followed by non-escape char
+        # Strategy: Replace problematic patterns before parsing
+        
+        # Fix invalid \x sequences (must be followed by 2 hex digits)
+        json_str = re.sub(r'\\x([^0-9a-fA-F]|$)', r'\\\\x\\1', json_str)
+        json_str = re.sub(r'\\x([0-9a-fA-F])([^0-9a-fA-F]|$)', r'\\\\x\\1\\2', json_str)
+        
+        # Fix unescaped backslashes that aren't valid escapes
+        # But be careful not to break valid escapes
+        # This is tricky - we'll use a more conservative approach
+        # Only fix obvious issues like \ followed by space or newline
+        json_str = re.sub(r'\\([^"\\/bfnrtux])', r'\\\\\\1', json_str)
+        
+        return json_str
+    
+    def _parse_json_response(self, response: str) -> Optional[Dict]:
+        """Parse JSON from Ollama response, handling invalid escapes."""
+        # Try to extract JSON from response
+        json_start = response.find('{')
+        json_end = response.rfind('}') + 1
+        if json_start < 0 or json_end <= json_start:
+            return None
+        
+        json_str = response[json_start:json_end]
+        
+        # Try normal parsing first
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError as e:
+            # If it's an escape error, try to fix it
+            if 'Invalid \\escape' in str(e) or 'escape' in str(e).lower():
+                try:
+                    fixed_json = self._fix_json_escapes(json_str)
+                    return json.loads(fixed_json)
+                except json.JSONDecodeError:
+                    # If fixing didn't work, try using raw_decode with error recovery
+                    try:
+                        # Try to find and extract just the JSON object
+                        # Remove any trailing text after the closing brace
+                        brace_count = 0
+                        end_pos = json_start
+                        for i, char in enumerate(response[json_start:], json_start):
+                            if char == '{':
+                                brace_count += 1
+                            elif char == '}':
+                                brace_count -= 1
+                                if brace_count == 0:
+                                    end_pos = i + 1
+                                    break
+                        
+                        if end_pos > json_start:
+                            json_str = response[json_start:end_pos]
+                            fixed_json = self._fix_json_escapes(json_str)
+                            return json.loads(fixed_json)
+                    except Exception:
+                        pass
+            
+            # Last resort: try to extract a valid JSON subset
+            # This is a fallback that might lose some data
+            return None
+    
     def _load_improvements_log(self) -> Dict:
         """Load improvement history."""
         if IMPROVEMENT_LOG.exists():
@@ -76,8 +307,18 @@ class CodeImprover:
             # Skip excluded directories
             dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
             
+            # Also check if current root is in an excluded directory
+            root_path = Path(root)
+            if any(excluded_dir in root_path.parts for excluded_dir in EXCLUDE_DIRS):
+                continue
+            
             for filename in filenames:
                 filepath = Path(root) / filename
+                
+                # Double-check: skip if any part of the path is in excluded dirs
+                if any(excluded_dir in filepath.parts for excluded_dir in EXCLUDE_DIRS):
+                    continue
+                
                 if filepath.suffix in PYTHON_EXTENSIONS:
                     if filepath.suffix not in EXCLUDE_FILES:
                         files.append(filepath)
@@ -159,17 +400,38 @@ If code is already excellent, set needs_improvement to false."""
             
             response = result.get('content', '')
             
-            # Try to extract JSON from response
-            json_start = response.find('{')
-            json_end = response.rfind('}') + 1
-            if json_start >= 0 and json_end > json_start:
-                json_str = response[json_start:json_end]
-                analysis = json.loads(json_str)
+            # Parse JSON with error handling
+            analysis = self._parse_json_response(response)
+            if analysis:
                 return analysis
             else:
                 print(f"  ⚠️  Could not parse JSON from response for {filepath.name}")
+                # Debug: show a snippet of the response
+                if len(response) > 200:
+                    print(f"  Response preview: {response[:200]}...")
                 return None
                 
+        except OllamaModelError as e:
+            # Model error - try to use fallback
+            print(f"  ⚠️  Model error: {e}")
+            if hasattr(e, 'available_models') and e.available_models:
+                print(f"  Available models: {', '.join(e.available_models)}")
+            # Try with None to let adapter auto-select
+            try:
+                print(f"  🔄 Retrying with auto-selected model...")
+                result = self.adapter.generate(
+                    prompt=prompt,
+                    task_type="code-review",
+                    model=None,  # Let adapter auto-select
+                    system_prompt="You are an expert Python code reviewer. Provide specific, actionable improvements in JSON format only."
+                )
+                response = result.get('content', '')
+                analysis = self._parse_json_response(response)
+                if analysis:
+                    return analysis
+            except Exception as retry_error:
+                print(f"  ❌ Retry also failed: {retry_error}")
+            return None
         except Exception as e:
             print(f"  ⚠️  Error analyzing {filepath.name}: {e}")
             return None
@@ -218,9 +480,15 @@ If code is already excellent, set needs_improvement to false."""
     def improve_file(self, filepath: Path) -> bool:
         """Improve a single file."""
         rel_path = str(filepath.relative_to(PROJECT_ROOT))
-        print(f"\n📄 Analyzing: {rel_path}")
+        self.current_file_index += 1
+        progress = f"[{self.current_file_index}/{self.total_files}]" if self.total_files > 0 else ""
+        print(f"\n📄 {progress} Analyzing: {rel_path}")
+        start_time = time.time()
         
         analysis = self._analyze_code(filepath)
+        elapsed = time.time() - start_time
+        if elapsed > 1:
+            print(f"  ⏱️  Analysis took {elapsed:.1f}s")
         if not analysis:
             return False
         
@@ -264,29 +532,43 @@ If code is already excellent, set needs_improvement to false."""
     
     def run_once(self, max_files: Optional[int] = None):
         """Run one improvement cycle."""
-        print("=" * 70)
-        print("🔧 Code Improvement Cycle")
-        print("=" * 70)
-        print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print()
-        
-        # Check Ollama connection
-        if not self.client.check_server():
-            print("❌ Ollama server is not running!")
-            print("   Start it with: ollama serve")
+        # Acquire lock
+        if not self._acquire_lock():
             return False
         
-        files = self._get_python_files()
-        print(f"📁 Found {len(files)} Python file(s)")
-        
-        if max_files:
-            files = files[:max_files]
-            print(f"🔢 Processing first {len(files)} file(s)")
-        
-        self.stats['files_analyzed'] = len(files)
-        
-        for filepath in files:
-            self.improve_file(filepath)
+        try:
+            print("=" * 70)
+            print("🔧 Code Improvement Cycle")
+            print("=" * 70)
+            print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"PID: {os.getpid()}")
+            print()
+            
+            # Check Ollama connection
+            if not self.client.check_server():
+                print("❌ Ollama server is not running!")
+                print("   Start it with: ollama serve")
+                return False
+            
+            files = self._get_python_files()
+            print(f"📁 Found {len(files)} Python file(s)")
+            
+            if max_files:
+                files = files[:max_files]
+                print(f"🔢 Processing first {len(files)} file(s)")
+            
+            self.stats['files_analyzed'] = len(files)
+            self.total_files = len(files)
+            self.current_file_index = 0
+            
+            cycle_start = time.time()
+            for filepath in files:
+                self.improve_file(filepath)
+            
+            cycle_elapsed = time.time() - cycle_start
+            print(f"\n⏱️  Cycle completed in {cycle_elapsed:.1f}s")
+        finally:
+            self._release_lock()
         
         # Save log
         self._save_improvements_log()
@@ -304,30 +586,49 @@ If code is already excellent, set needs_improvement to false."""
     
     def run_continuous(self, max_files: Optional[int] = None):
         """Run continuously, improving code periodically."""
-        print("=" * 70)
-        print("🚀 Starting Continuous Code Improvement")
-        print("=" * 70)
-        print(f"Interval: {self.interval} seconds")
-        print(f"Model: {self.model or 'auto-select'}")
-        print("Press Ctrl+C to stop")
-        print("=" * 70)
-        print()
+        # Acquire lock for continuous mode
+        if not self._acquire_lock():
+            return
         
-        cycle = 0
         try:
-            while True:
-                cycle += 1
-                print(f"\n🔄 Cycle #{cycle}")
-                self.run_once(max_files=max_files)
-                
-                if cycle > 0:
-                    print(f"\n⏳ Waiting {self.interval} seconds until next cycle...")
-                    time.sleep(self.interval)
+            print("=" * 70)
+            print("🚀 Starting Continuous Code Improvement")
+            print("=" * 70)
+            print(f"Interval: {self.interval} seconds")
+            print(f"Model: {self.model or 'auto-select'}")
+            print(f"PID: {os.getpid()}")
+            print("Press Ctrl+C to stop")
+            print("=" * 70)
+            print()
+            
+            cycle = 0
+            try:
+                while True:
+                    cycle += 1
+                    print(f"\n🔄 Cycle #{cycle}")
+                    cycle_success = self.run_once(max_files=max_files)
                     
-        except KeyboardInterrupt:
-            print("\n\n🛑 Stopped by user")
-            print(f"Total cycles: {cycle}")
-            print(f"Total improvements: {self.stats['improvements_applied']}")
+                    if not cycle_success:
+                        print("⚠️  Cycle failed, but continuing...")
+                    
+                    if cycle > 0:
+                        print(f"\n⏳ Waiting {self.interval} seconds until next cycle...")
+                        # Show countdown
+                        for remaining in range(self.interval, 0, -10):
+                            if remaining > 10:
+                                print(f"   {remaining}s remaining...", end='\r')
+                                time.sleep(10)
+                            else:
+                                time.sleep(remaining)
+                                break
+                        print("   Starting next cycle...")
+                        
+            except KeyboardInterrupt:
+                print("\n\n🛑 Stopped by user")
+                print(f"Total cycles: {cycle}")
+                print(f"Total improvements: {self.stats['improvements_applied']}")
+        finally:
+            self._release_lock()
 
 
 def main():

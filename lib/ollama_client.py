@@ -192,7 +192,7 @@ class OllamaClient:
         
         last_error = None
         logger.info(f"Generating response with model '{model}' (attempts: {max_attempts})")
-        if logger.log_requests if hasattr(logger, 'log_requests') else False:
+        if logger.log_requests:
             logger.debug(f"Request body: {json.dumps(body, indent=2)}")
         
         for attempt in range(max_attempts):
@@ -208,7 +208,7 @@ class OllamaClient:
                 response.raise_for_status()
                 data = response.json()
                 
-                if logger.log_responses if hasattr(logger, 'log_responses') else False:
+                if logger.log_responses:
                     logger.debug(f"Response: {json.dumps(data, indent=2)}")
                 
                 # Check for model errors in response
@@ -353,12 +353,15 @@ def get_llm_response(
     return result['response']
 
 
-if __name__ == '__main__':
-    # CLI usage
+def main():
+    """CLI entry point for ollama_client."""
     import sys
     
     if len(sys.argv) < 2:
-        print("Usage: ollama_client.py <prompt> [model]")
+        print("Usage: ralph-ollama <prompt> [model]")
+        print("\nExample:")
+        print("  ralph-ollama 'Write a hello world function in Python'")
+        print("  ralph-ollama 'Explain recursion' llama3.2")
         sys.exit(1)
     
     prompt = sys.argv[1]
@@ -371,3 +374,7 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()

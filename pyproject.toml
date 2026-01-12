@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ralph-ollama"
-version = "1.0.0"
+version = "1.1.0"
 description = "Ralph Ollama integration - Use local LLM with Ollama for development workflows"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -52,12 +52,14 @@ Issues = "https://github.com/yourusername/ralph-ollama-standalone/issues"
 
 [project.scripts]
 ralph-ollama = "lib.ollama_client:main"
+ralph-ollama-ui = "ui.app:main"
 
 [tool.setuptools]
 packages = ["lib", "integration"]
 
 [tool.setuptools.package-data]
-"*" = ["*.json", "*.md"]
+"lib" = ["*.json", "*.md"]
+"integration" = ["*.json", "*.md"]
 
 [tool.black]
 line-length = 100
