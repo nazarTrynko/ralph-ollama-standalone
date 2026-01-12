@@ -7,8 +7,7 @@ Provides smart caching with TTL and invalidation.
 import hashlib
 import json
 import time
-from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from collections import OrderedDict
 from lib.logging_config import get_logger
 
@@ -28,7 +27,7 @@ class ResponseCache:
         """Initialize response cache.
         
         Args:
-            cache_dir: Directory for cache files (default: state/cache)
+            cache_dir: Directory for cache files (deprecated, kept for compatibility)
             enabled: Whether caching is enabled
             ttl_seconds: Time-to-live for cache entries in seconds
             max_size: Maximum number of cache entries (LRU eviction)
@@ -36,15 +35,6 @@ class ResponseCache:
         self.enabled = enabled
         self.ttl_seconds = ttl_seconds
         self.max_size = max_size
-        
-        if cache_dir:
-            self.cache_dir = Path(cache_dir)
-        else:
-            # Default to state/cache in project root
-            project_root = Path(__file__).parent.parent
-            self.cache_dir = project_root / 'state' / 'cache'
-        
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
         
         # In-memory LRU cache for fast access
         self.memory_cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
@@ -70,10 +60,6 @@ class ResponseCache:
         full_key = f"{category}:{key_str}"
         return hashlib.md5(full_key.encode()).hexdigest()
     
-    def _get_cache_file(self, cache_key: str) -> Path:
-        """Get cache file path for a key."""
-        return self.cache_dir / f"{cache_key}.json"
-    
     def get(self, category: str, key_data: Any) -> Optional[Any]:
         """Get cached value.
         
@@ -89,42 +75,17 @@ class ResponseCache:
         
         cache_key = self._get_cache_key(category, key_data)
         
-        # Check memory cache first
+        # Check memory cache
         if cache_key in self.memory_cache:
             entry = self.memory_cache[cache_key]
             if time.time() - entry['timestamp'] < self.ttl_seconds:
                 # Move to end (most recently used)
                 self.memory_cache.move_to_end(cache_key)
-                logger.debug(f"Cache hit (memory): {category}")
+                logger.debug(f"Cache hit: {category}")
                 return entry['value']
             else:
                 # Expired, remove from memory
                 del self.memory_cache[cache_key]
-        
-        # Check disk cache
-        cache_file = self._get_cache_file(cache_key)
-        if cache_file.exists():
-            try:
-                with open(cache_file, 'r') as f:
-                    entry = json.load(f)
-                
-                # Check TTL
-                if time.time() - entry['timestamp'] < self.ttl_seconds:
-                    # Load into memory cache
-                    self._add_to_memory_cache(cache_key, entry['value'], entry['timestamp'])
-                    logger.debug(f"Cache hit (disk): {category}")
-                    return entry['value']
-                else:
-                    # Expired, delete file
-                    cache_file.unlink()
-                    logger.debug(f"Cache expired: {category}")
-            except (json.JSONDecodeError, IOError, KeyError) as e:
-                logger.warning(f"Error reading cache file {cache_file}: {e}")
-                # Delete corrupted cache file
-                try:
-                    cache_file.unlink()
-                except OSError:
-                    pass
         
         logger.debug(f"Cache miss: {category}")
         return None
@@ -145,19 +106,7 @@ class ResponseCache:
         
         # Add to memory cache
         self._add_to_memory_cache(cache_key, value, timestamp)
-        
-        # Save to disk
-        cache_file = self._get_cache_file(cache_key)
-        try:
-            with open(cache_file, 'w') as f:
-                json.dump({
-                    'value': value,
-                    'timestamp': timestamp,
-                    'category': category
-                }, f)
-            logger.debug(f"Cached: {category}")
-        except IOError as e:
-            logger.warning(f"Error writing cache file {cache_file}: {e}")
+        logger.debug(f"Cached: {category}")
     
     def _add_to_memory_cache(self, cache_key: str, value: Any, timestamp: float) -> None:
         """Add entry to memory cache with LRU eviction."""
@@ -186,50 +135,17 @@ class ResponseCache:
         if category and key_data:
             # Invalidate specific entry
             cache_key = self._get_cache_key(category, key_data)
-            
-            # Remove from memory
             if cache_key in self.memory_cache:
                 del self.memory_cache[cache_key]
-            
-            # Remove from disk
-            cache_file = self._get_cache_file(cache_key)
-            if cache_file.exists():
-                cache_file.unlink()
-            
             logger.debug(f"Invalidated cache entry: {category}")
         elif category:
-            # Invalidate all entries in category
-            keys_to_remove = []
-            for key in list(self.memory_cache.keys()):
-                # Check disk files for category
-                cache_file = self._get_cache_file(key)
-                if cache_file.exists():
-                    try:
-                        with open(cache_file, 'r') as f:
-                            entry = json.load(f)
-                        if entry.get('category') == category:
-                            keys_to_remove.append(key)
-                            cache_file.unlink()
-                    except (json.JSONDecodeError, IOError, KeyError):
-                        pass
-            
-            # Remove from memory
-            for key in keys_to_remove:
-                if key in self.memory_cache:
-                    del self.memory_cache[key]
-            
+            # Invalidate all entries in category (would need category tracking)
+            # For now, invalidate all if category specified
+            self.memory_cache.clear()
             logger.debug(f"Invalidated cache category: {category}")
         else:
             # Invalidate all
             self.memory_cache.clear()
-            
-            # Remove all cache files
-            for cache_file in self.cache_dir.glob('*.json'):
-                try:
-                    cache_file.unlink()
-                except OSError:
-                    pass
-            
             logger.info("Invalidated all cache entries")
     
     def clear_expired(self) -> int:
@@ -254,23 +170,6 @@ class ResponseCache:
             del self.memory_cache[key]
             cleared += 1
         
-        # Clear from disk
-        for cache_file in self.cache_dir.glob('*.json'):
-            try:
-                with open(cache_file, 'r') as f:
-                    entry = json.load(f)
-                
-                if current_time - entry.get('timestamp', 0) >= self.ttl_seconds:
-                    cache_file.unlink()
-                    cleared += 1
-            except (json.JSONDecodeError, IOError, KeyError):
-                # Corrupted file, delete it
-                try:
-                    cache_file.unlink()
-                    cleared += 1
-                except OSError:
-                    pass
-        
         if cleared > 0:
             logger.debug(f"Cleared {cleared} expired cache entries")
         
@@ -286,8 +185,7 @@ class ResponseCache:
             'enabled': self.enabled,
             'memory_entries': len(self.memory_cache),
             'max_size': self.max_size,
-            'ttl_seconds': self.ttl_seconds,
-            'cache_dir': str(self.cache_dir)
+            'ttl_seconds': self.ttl_seconds
         }
 
 

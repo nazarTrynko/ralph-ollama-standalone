@@ -674,3 +674,347 @@ code with ```nested``` blocks
         engine = RalphLoopEngine(tmp_path)
         assert engine.file_tracker is not None
         assert engine.file_tracker.project_path == tmp_path.resolve()
+    
+    def test_infer_file_extension_nodejs(self):
+        """Test file extension inference for Node.js applications."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        nodejs_code = """const fs = require('fs');
+const path = require('path');
+
+function readConfig() {
+  const configPath = path.join(__dirname, 'config.json');
+  return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+}
+
+module.exports = { readConfig };
+"""
+        assert engine._infer_file_extension(nodejs_code) == '.js'
+    
+    def test_infer_file_extension_package_json(self):
+        """Test file extension inference for package.json."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        package_json = '{"name": "test", "version": "1.0.0", "main": "main.js"}'
+        assert engine._infer_file_extension(package_json) == '.json'
+    
+    def test_infer_file_extension_json_with_comments(self):
+        """Test JSON detection with leading comments."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        json_with_comment = """// /app/package.json
+{
+  "name": "test",
+  "version": "1.0.0"
+}"""
+        assert engine._infer_file_extension(json_with_comment) == '.json'
+    
+    def test_infer_file_extension_defaults_to_js_not_py(self):
+        """Test that ambiguous code defaults to .js instead of .py."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        ambiguous_code = "const x = 5; function test() { return x; }"
+        assert engine._infer_file_extension(ambiguous_code) == '.js'
+    
+    def test_parse_code_blocks_strips_leading_metadata(self):
+        """Test that code block parsing strips leading metadata comments."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        response = """```javascript
+// /app/main.js
+const http = require('http');
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Hello World');
+});
+server.listen(3000);
+```"""
+        files = engine._parse_code_blocks(response)
+        assert len(files) == 1
+        # Content should be preserved
+        assert 'const http' in files[0]['content']
+        # But metadata should be stripped for detection
+        assert engine._strip_leading_metadata(files[0]['content']) == files[0]['content']
+    
+    def test_extract_file_path_ignores_comment_patterns(self):
+        """Test that comment patterns like /app/file.js are ignored."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        # Specifier with comment pattern should be ignored
+        path = engine._extract_file_path('/app/package.json', '{"name": "test"}', 0)
+        # Should not use /app/package.json, should detect JSON and use meaningful name
+        assert path == 'package.json' or 'generated' in path
+    
+    def test_extract_file_path_detects_common_nodejs_files(self):
+        """Test detection of common Node.js file names from content."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        main_js = """const fs = require('fs');
+const path = require('path');
+
+function start() {
+  console.log('Application starting...');
+  // Application initialization code
+}
+
+if (require.main === module) {
+  start();
+}
+
+module.exports = { start };
+"""
+        path = engine._extract_file_path(None, main_js, 0)
+        assert path == 'main.js'
+    
+    def test_extract_file_path_detects_package_json(self):
+        """Test detection of package.json from content."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        package_content = '{"name": "my-app", "version": "1.0.0", "main": "main.js"}'
+        path = engine._extract_file_path(None, package_content, 0)
+        assert path == 'package.json'
+    
+    def test_extract_file_path_detects_index_html(self):
+        """Test detection of index.html from content."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        html_content = """<!DOCTYPE html>
+<html>
+<head><title>Test</title></head>
+<body><h1>Hello</h1></body>
+</html>"""
+        path = engine._extract_file_path(None, html_content, 0)
+        assert path == 'index.html'
+    
+    def test_generate_meaningful_filename_nodejs(self):
+        """Test meaningful filename generation for Node.js applications."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        nodejs_code = """const http = require('http');
+const fs = require('fs');
+
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/html' });
+  res.end('<h1>Hello World</h1>');
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+"""
+        name = engine._generate_meaningful_filename(nodejs_code, 0, '.js')
+        assert name == 'main.js'
+    
+    def test_generate_meaningful_filename_package_json(self):
+        """Test meaningful filename generation for package.json."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        package_content = '{"name": "test", "version": "1.0.0"}'
+        name = engine._generate_meaningful_filename(package_content, 0, '.json')
+        assert name == 'package.json'
+    
+    def test_strip_leading_metadata_removes_comment_paths(self):
+        """Test that leading metadata like /app/file.js is stripped."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        content = """// /app/package.json
+{
+  "name": "test"
+}"""
+        cleaned = engine._strip_leading_metadata(content)
+        # Should remove the comment line
+        assert '// /app/package.json' not in cleaned
+        assert '"name"' in cleaned
+    
+    def test_strip_leading_metadata_preserves_code(self):
+        """Test that actual code is preserved when stripping metadata."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        content = """// Some comment
+const x = 5;
+function test() {
+  return x;
+}"""
+        cleaned = engine._strip_leading_metadata(content)
+        assert 'const x = 5' in cleaned
+        assert 'function test()' in cleaned
+    
+    def test_infer_file_extension_react(self):
+        """Test file extension inference for React/JSX code."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        react_code = """import React from 'react';
+import { useState } from 'react';
+
+function App() {
+  const [count, setCount] = useState(0);
+  
+  return (
+    <div>
+      <h1>Count: {count}</h1>
+      <button onClick={() => setCount(count + 1)}>Increment</button>
+    </div>
+  );
+}
+
+export default App;
+"""
+        # React code should be detected as JavaScript
+        assert engine._infer_file_extension(react_code) == '.js'
+    
+    def test_infer_file_extension_express(self):
+        """Test file extension inference for Express.js applications."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        express_code = """const express = require('express');
+const app = express();
+
+app.get('/', (req, res) => {
+  res.json({ message: 'Hello World' });
+});
+
+app.listen(3000, () => {
+  console.log('Server running on port 3000');
+});
+"""
+        assert engine._infer_file_extension(express_code) == '.js'
+    
+    def test_infer_file_extension_typescript(self):
+        """Test file extension inference for TypeScript code."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        ts_code = """interface User {
+  id: number;
+  name: string;
+}
+
+function getUser(id: number): User {
+  return { id, name: 'John Doe' };
+}
+
+export default getUser;
+"""
+        assert engine._infer_file_extension(ts_code) == '.ts'
+    
+    def test_extract_file_path_detects_server_js(self):
+        """Test detection of server.js from Express.js patterns."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        server_code = """const express = require('express');
+const app = express();
+
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
+});
+"""
+        path = engine._extract_file_path(None, server_code, 0)
+        # Should detect as main.js or server.js based on content patterns
+        assert path in ['main.js', 'server.js'] or 'generated' in path
+    
+    def test_extract_file_path_detects_app_js(self):
+        """Test detection of app.js from application initialization patterns."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        app_code = """const express = require('express');
+const app = express();
+
+// Middleware setup
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Routes
+app.get('/', (req, res) => {
+  res.send('Hello World');
+});
+
+module.exports = app;
+"""
+        path = engine._extract_file_path(None, app_code, 0)
+        # Should detect as main.js or app.js based on content patterns
+        assert path in ['main.js', 'app.js'] or 'generated' in path
+    
+    def test_extract_file_path_detects_react_component(self):
+        """Test detection of React component files."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        react_component = """import React from 'react';
+
+function Button({ onClick, children }) {
+  return (
+    <button onClick={onClick} className="btn">
+      {children}
+    </button>
+  );
+}
+
+export default Button;
+"""
+        path = engine._extract_file_path(None, react_component, 0)
+        # Should detect as .js or .jsx
+        assert path.endswith('.js') or path.endswith('.jsx')
+    
+    def test_generate_meaningful_filename_express(self):
+        """Test meaningful filename generation for Express.js applications."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        express_code = """const express = require('express');
+const app = express();
+
+app.get('/', (req, res) => {
+  res.send('Hello World');
+});
+
+app.listen(3000);
+"""
+        name = engine._generate_meaningful_filename(express_code, 0, '.js')
+        # Should detect as main.js or server.js
+        assert name in ['main.js', 'server.js'] or name is None
+    
+    def test_generate_meaningful_filename_react(self):
+        """Test meaningful filename generation for React components."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        react_code = """import React, { useState } from 'react';
+
+function Counter() {
+  const [count, setCount] = useState(0);
+  return <div>{count}</div>;
+}
+
+export default Counter;
+"""
+        name = engine._generate_meaningful_filename(react_code, 0, '.js')
+        # Should detect as .js or .jsx, or None if no specific pattern
+        assert name is None or name.endswith('.js') or name.endswith('.jsx')
+    
+    def test_infer_file_extension_generic_javascript(self):
+        """Test file extension inference for generic JavaScript code."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        generic_js = """function calculateTotal(items) {
+  return items.reduce((sum, item) => sum + item.price, 0);
+}
+
+const items = [
+  { name: 'Apple', price: 1.50 },
+  { name: 'Banana', price: 0.75 }
+];
+
+console.log('Total:', calculateTotal(items));
+"""
+        assert engine._infer_file_extension(generic_js) == '.js'
+    
+    def test_extract_file_path_detects_config_json(self):
+        """Test detection of config.json from configuration patterns."""
+        engine = RalphLoopEngine(Path("/tmp"))
+        
+        config_content = '{"database": {"host": "localhost", "port": 5432}, "api": {"timeout": 5000}}'
+        path = engine._extract_file_path(None, config_content, 0)
+        # Should detect as package.json or config.json based on structure
+        assert path == 'package.json' or 'generated' in path

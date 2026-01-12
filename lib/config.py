@@ -184,12 +184,13 @@ def validate_workflow_config(config: Dict[str, Any]) -> List[str]:
     return warnings_list
 
 
-def load_and_validate_config(config_path: Path) -> Dict[str, Any]:
+def load_and_validate_config(config_path: Path, use_pydantic: bool = True) -> Dict[str, Any]:
     """
     Load and validate configuration file.
     
     Args:
         config_path: Path to configuration file
+        use_pydantic: Whether to use Pydantic validation (default: True)
     
     Returns:
         Validated configuration dictionary
@@ -208,14 +209,44 @@ def load_and_validate_config(config_path: Path) -> Dict[str, Any]:
     except json.JSONDecodeError as e:
         raise ConfigValidationError(f"Invalid JSON in config file {config_path}: {e}")
     
-    # Determine which validation function to use
-    if 'server' in config or 'defaultModel' in config:
-        warnings_list = validate_ollama_config(config)
-    else:
-        warnings_list = validate_workflow_config(config)
+    # Try Pydantic validation first if enabled
+    if use_pydantic:
+        try:
+            from lib.config_models import (
+                validate_ollama_config_pydantic,
+                validate_workflow_config_pydantic
+            )
+            
+            # Determine which validation function to use
+            if 'server' in config or 'defaultModel' in config:
+                # Ollama config
+                validated_model = validate_ollama_config_pydantic(config)
+                # Convert back to dict for backward compatibility
+                return validated_model.dict()
+            else:
+                # Workflow config
+                validated_model = validate_workflow_config_pydantic(config)
+                # Convert back to dict for backward compatibility
+                return validated_model.dict()
+        except ImportError:
+            # Pydantic not available, fall back to manual validation
+            warnings.warn("Pydantic not available, using manual validation", UserWarning)
+            use_pydantic = False
+        except ValueError as e:
+            # Pydantic validation failed, fall back to manual validation with warning
+            warnings.warn(f"Pydantic validation failed: {e}, falling back to manual validation", UserWarning)
+            use_pydantic = False
     
-    # Emit warnings but don't fail
-    for warning in warnings_list:
-        warnings.warn(f"Config validation warning: {warning}", UserWarning)
+    # Fall back to manual validation
+    if not use_pydantic:
+        # Determine which validation function to use
+        if 'server' in config or 'defaultModel' in config:
+            warnings_list = validate_ollama_config(config)
+        else:
+            warnings_list = validate_workflow_config(config)
+        
+        # Emit warnings but don't fail
+        for warning in warnings_list:
+            warnings.warn(f"Config validation warning: {warning}", UserWarning)
     
     return config

@@ -14,10 +14,8 @@ from datetime import datetime
 from flask import Flask, render_template, request, jsonify, Response
 from flask_cors import CORS
 
-# Add project root to path to enable package imports
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+from lib.path_utils import setup_paths
+setup_paths()
 
 # Import from packages
 from lib.ollama_client import OllamaClient

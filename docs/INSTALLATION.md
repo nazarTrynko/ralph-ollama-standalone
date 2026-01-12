@@ -109,8 +109,8 @@ pip install -r requirements.txt flask flask-cors
 #### Step 3: Verify Installation
 
 ```bash
-# Test imports
-python3 -c "import sys; sys.path.insert(0, '.'); from lib.ollama_client import OllamaClient; print('✅ Setup complete')"
+# Test imports (recommended: use pip install -e .)
+python3 -c "from lib.path_utils import setup_paths; setup_paths(); from lib.ollama_client import OllamaClient; print('✅ Setup complete')"
 ```
 
 ---

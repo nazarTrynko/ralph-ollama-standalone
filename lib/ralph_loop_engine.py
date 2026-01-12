@@ -15,35 +15,21 @@ from enum import Enum
 from datetime import datetime
 import json
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+from lib.path_utils import setup_paths
+setup_paths()
 
 from integration.ralph_ollama_adapter import RalphOllamaAdapter, call_llm
 from lib.file_tracker import FileTracker
 from lib.response_cache import get_cache
 from lib.logging_config import get_logger
 from lib.code_validator import CodeValidator
+from lib.ralph_loop_engine.types import Phase, LoopMode
+from lib.ralph_loop_engine.task_parser import TaskParser
+from lib.ralph_loop_engine.progress_tracker import ProgressTracker
+from lib.ralph_loop_engine.status_logger import StatusLogger
+from lib.ralph_loop_engine.error_recovery import ErrorRecovery
 
 logger = get_logger('ralph_loop')
-
-
-class Phase(Enum):
-    """Ralph workflow phases."""
-    STUDY = "study"
-    IMPLEMENT = "implement"
-    TEST = "test"
-    UPDATE = "update"
-    IDLE = "idle"
-    COMPLETE = "complete"
-    ERROR = "error"
-
-
-class LoopMode(Enum):
-    """Execution mode."""
-    NON_STOP = "non_stop"
-    PHASE_BY_PHASE = "phase_by_phase"
 
 
 class RalphLoopEngine:
@@ -75,31 +61,43 @@ class RalphLoopEngine:
         self.is_paused = False
         self.should_stop = False
         
-        self.status_log: List[Dict[str, Any]] = []
         self.phase_history: List[Dict[str, Any]] = []
         self.user_input: Optional[str] = None
         
         self.lock = threading.Lock()
         self.thread: Optional[threading.Thread] = None
         
-        self.status_callback: Optional[Callable[[Dict[str, Any]], None]] = None
-        
-        # Error recovery settings
-        self.max_retries = 2
-        self.retry_delay = 2  # seconds
-        self.continue_on_non_critical = True
-        
-        # Progress tracking
-        self.phase_start_time: Optional[datetime] = None
-        self.task_start_time: Optional[datetime] = None
-        self.current_phase_progress: float = 0.0  # 0.0 to 1.0
-        self.files_expected: int = 0
-        self.files_created_count: int = 0
-        self.phase_durations: Dict[str, List[float]] = {}  # Track historical phase durations
+        # Initialize error recovery
+        self.error_recovery = ErrorRecovery(
+            max_retries=2,
+            retry_delay=2.0,
+            continue_on_non_critical=True
+        )
+        # Keep for backward compatibility
+        self.max_retries = self.error_recovery.max_retries
+        self.retry_delay = self.error_recovery.retry_delay
+        self.continue_on_non_critical = self.error_recovery.continue_on_non_critical
         
         # Project metadata
         self.project_name: Optional[str] = None
         self.project_description: Optional[str] = None
+        
+        # Initialize modular components
+        self.progress_tracker = ProgressTracker()
+        self.progress_tracker.phase_history = self.phase_history
+        self.progress_tracker.phase_durations = self.phase_durations
+        
+        self.status_logger = StatusLogger(self.progress_tracker)
+        self.status_log: List[Dict[str, Any]] = []  # Keep for backward compatibility
+        
+        self.task_parser = TaskParser(
+            self.project_path,
+            self.project_name,
+            self.project_description,
+            self.adapter,
+            self.model,
+            log_callback=self._log_status_wrapper
+        )
     
     def set_status_callback(self, callback: Callable[[Dict[str, Any]], None]) -> None:
         """Set callback for status updates.
@@ -107,19 +105,16 @@ class RalphLoopEngine:
         Args:
             callback: Function to call with status updates
         """
-        self.status_callback = callback
+        self.status_logger.set_callback(callback)
     
-    def _emit_status(self, status: Dict[str, Any]) -> None:
-        """Emit status update via callback.
+    def _log_status_wrapper(self, message: str, phase: Optional[Phase] = None) -> None:
+        """Wrapper for log callback from TaskParser.
         
         Args:
-            status: Status dictionary
+            message: Log message
+            phase: Optional phase
         """
-        if self.status_callback:
-            try:
-                self.status_callback(status)
-            except Exception as e:
-                logger.error(f"Error in status callback: {e}")
+        self._log_status(message, phase)
     
     def _calculate_phase_progress(self, phase: Phase) -> float:
         """Calculate progress within current phase.
@@ -130,37 +125,11 @@ class RalphLoopEngine:
         Returns:
             Progress value between 0.0 and 1.0
         """
-        if phase == Phase.STUDY:
-            # Study phase: simple time-based estimate
-            if self.phase_start_time:
-                elapsed = (datetime.now() - self.phase_start_time).total_seconds()
-                avg_duration = self._get_average_phase_duration(phase.value)
-                if avg_duration > 0:
-                    return min(0.9, elapsed / avg_duration)  # Cap at 90% until complete
-            return 0.3
-        elif phase == Phase.IMPLEMENT:
-            # Implement phase: based on files created
-            if self.files_expected > 0:
-                return min(0.95, self.files_created_count / max(1, self.files_expected))
-            # Time-based fallback
-            if self.phase_start_time:
-                elapsed = (datetime.now() - self.phase_start_time).total_seconds()
-                avg_duration = self._get_average_phase_duration(phase.value)
-                if avg_duration > 0:
-                    return min(0.9, elapsed / avg_duration)
-            return 0.4
-        elif phase == Phase.TEST:
-            # Test phase: time-based
-            if self.phase_start_time:
-                elapsed = (datetime.now() - self.phase_start_time).total_seconds()
-                avg_duration = self._get_average_phase_duration(phase.value)
-                if avg_duration > 0:
-                    return min(0.9, elapsed / avg_duration)
-            return 0.5
-        elif phase == Phase.UPDATE:
-            # Update phase: quick, usually 80% done immediately
-            return 0.8
-        return 0.0
+        # Sync progress tracker state
+        self.progress_tracker.phase_start_time = self.phase_start_time
+        self.progress_tracker.files_expected = self.files_expected
+        self.progress_tracker.files_created_count = self.files_created_count
+        return self.progress_tracker.calculate_phase_progress(phase)
     
     def _get_average_phase_duration(self, phase_name: str) -> float:
         """Get average duration for a phase based on history.
@@ -171,18 +140,12 @@ class RalphLoopEngine:
         Returns:
             Average duration in seconds, or 0 if no history
         """
-        if phase_name not in self.phase_durations or not self.phase_durations[phase_name]:
-            # Default estimates (in seconds)
-            defaults = {
-                'study': 30.0,
-                'implement': 60.0,
-                'test': 20.0,
-                'update': 5.0
-            }
-            return defaults.get(phase_name, 30.0)
-        
-        durations = self.phase_durations[phase_name]
-        return sum(durations) / len(durations)
+        # Sync phase durations (use engine's dict as source of truth)
+        self.progress_tracker.phase_durations = self.phase_durations
+        duration = self.progress_tracker.get_average_duration(phase_name)
+        # Sync back in case progress_tracker modified it
+        self.phase_durations = self.progress_tracker.phase_durations
+        return duration
     
     def _estimate_time_remaining(self, phase: Phase) -> Optional[float]:
         """Estimate time remaining for current phase.
@@ -193,17 +156,8 @@ class RalphLoopEngine:
         Returns:
             Estimated seconds remaining, or None if cannot estimate
         """
-        if not self.phase_start_time:
-            return None
-        
-        elapsed = (datetime.now() - self.phase_start_time).total_seconds()
-        avg_duration = self._get_average_phase_duration(phase.value)
-        
-        if avg_duration <= 0:
-            return None
-        
-        remaining = max(0, avg_duration - elapsed)
-        return remaining
+        self.progress_tracker.phase_start_time = self.phase_start_time
+        return self.progress_tracker.estimate_time_remaining(phase)
     
     def _calculate_task_progress(self) -> float:
         """Calculate overall task progress.
@@ -211,27 +165,7 @@ class RalphLoopEngine:
         Returns:
             Progress value between 0.0 and 1.0
         """
-        phases = [Phase.STUDY, Phase.IMPLEMENT, Phase.TEST, Phase.UPDATE]
-        total_phases = len(phases)
-        
-        # Count completed phases
-        completed = 0
-        for phase in phases:
-            # Check if phase is in history and completed
-            for entry in self.phase_history:
-                if entry.get('phase') == phase.value and entry.get('success'):
-                    completed += 1
-                    break
-        
-        # Add current phase progress
-        if self.current_phase in phases:
-            phase_index = phases.index(self.current_phase)
-            if phase_index >= completed:
-                # Current phase is in progress
-                phase_progress = self._calculate_phase_progress(self.current_phase)
-                return (completed + phase_progress) / total_phases
-        
-        return completed / total_phases
+        return self.progress_tracker.calculate_task_progress(self.current_phase)
     
     def _log_status(self, message: str, phase: Optional[Phase] = None, **kwargs: Any) -> None:
         """Log status message with progress information.
@@ -242,24 +176,14 @@ class RalphLoopEngine:
             **kwargs: Additional status data
         """
         current_phase = phase or self.current_phase
-        phase_progress = self._calculate_phase_progress(current_phase)
-        task_progress = self._calculate_task_progress()
-        time_remaining = self._estimate_time_remaining(current_phase)
-        
-        status_entry = {
-            'timestamp': datetime.now().isoformat(),
-            'message': message,
-            'phase': current_phase.value,
-            'phase_progress': round(phase_progress, 2),
-            'task_progress': round(task_progress, 2),
-            'time_remaining': round(time_remaining, 1) if time_remaining else None,
-            'files_created': self.files_created_count,
-            'files_expected': self.files_expected if self.files_expected > 0 else None,
-            **kwargs
-        }
-        self.status_log.append(status_entry)
-        logger.info(f"[{status_entry['phase']}] {message} (Progress: {int(task_progress * 100)}%)")
-        self._emit_status(status_entry)
+        # Sync state to progress tracker
+        self.progress_tracker.phase_start_time = self.phase_start_time
+        self.progress_tracker.files_expected = self.files_expected
+        self.progress_tracker.files_created_count = self.files_created_count
+        # Use status logger
+        self.status_logger.log(message, phase, current_phase, **kwargs)
+        # Keep status_log for backward compatibility
+        self.status_log = self.status_logger.get_status_log()
     
     def initialize_project(
         self,
@@ -389,31 +313,7 @@ See @fix_plan.md for current tasks.
         Returns:
             List of uncompleted task descriptions
         """
-        fix_plan_path = self.project_path / '@fix_plan.md'
-        if not fix_plan_path.exists():
-            return []
-        
-        tasks = []
-        in_priority_section = False
-        
-        with open(fix_plan_path, 'r') as f:
-            for line in f:
-                line = line.strip()
-                # Check if we're in a priority section
-                if line.startswith('## High Priority') or line.startswith('## Medium Priority') or line.startswith('## Low Priority'):
-                    in_priority_section = True
-                    continue
-                if line.startswith('##'):
-                    in_priority_section = False
-                    continue
-                
-                # Look for uncompleted tasks
-                if in_priority_section and line.startswith('- [ ]'):
-                    task = line[5:].strip()
-                    if task:
-                        tasks.append(task)
-        
-        return tasks
+        return self.task_parser.read_tasks()
     
     def _generate_tasks_from_description(self) -> List[str]:
         """Generate initial tasks from project description using LLM.
@@ -421,90 +321,25 @@ See @fix_plan.md for current tasks.
         Returns:
             List of generated task descriptions
         """
-        if not self.project_description:
-            # Try to read from README if description not stored
-            readme_path = self.project_path / 'README.md'
-            if readme_path.exists():
-                content = readme_path.read_text()
-                # Extract description (first paragraph after title)
-                lines = content.split('\n')
-                for i, line in enumerate(lines):
-                    if line.startswith('# '):
-                        # Found title, description should be in next non-empty lines
-                        desc_lines = []
-                        for j in range(i + 1, len(lines)):
-                            if lines[j].strip() and not lines[j].startswith('#'):
-                                desc_lines.append(lines[j].strip())
-                            elif lines[j].startswith('#'):
-                                break
-                        if desc_lines:
-                            self.project_description = ' '.join(desc_lines)
-                        break
-        
-        if not self.project_description:
-            return []
-        
-        self._log_status("Generating tasks from project description", Phase.IDLE)
-        
-        system_prompt = """You are Ralph, an autonomous AI development agent.
-Your role is to break down project ideas into actionable tasks.
-
-Given a project description, generate 3-5 specific, actionable tasks that need to be completed.
-Tasks should be:
-- Specific and clear
-- Actionable (can be implemented)
-- Ordered logically (most important first)
-- Focused on creating deliverables or core functionality
-
-Return ONLY a list of tasks, one per line, without numbering or bullet points.
-Each task should be a single line describing what needs to be done."""
-        
-        prompt = f"""Project Name: {self.project_name or 'Unknown'}
-
-Project Description:
-{self.project_description}
-
-Generate 3-5 specific, actionable tasks to get started with this project.
-List one task per line, without numbering or bullets."""
-        
-        try:
-            # Check if adapter is available before attempting to generate
-            if not self.adapter.check_available():
-                self._log_status("Ollama adapter not available, cannot generate tasks automatically", Phase.ERROR)
-                return []
-            
-            result = self.adapter.generate(
-                prompt=prompt,
-                system_prompt=system_prompt,
-                model=self.model,  # Use stored model preference
-                task_type="implementation"
-            )
-            
-            response = result.get('content', '')
-            
-            # Parse response into task list
-            tasks = []
-            for line in response.strip().split('\n'):
-                line = line.strip()
-                # Remove common prefixes like "- ", "* ", numbers, etc.
-                line = re.sub(r'^[-*•]\s*', '', line)
-                line = re.sub(r'^\d+[.)]\s*', '', line)
-                if line and len(line) > 10:  # Filter out very short lines
-                    tasks.append(line)
-            
-            if tasks:
-                self._log_status(f"Generated {len(tasks)} tasks from description", Phase.IDLE)
-            else:
-                self._log_status("Could not parse generated tasks", Phase.IDLE)
-            
-            return tasks
-            
-        except Exception as e:
-            logger.error(f"Error generating tasks: {e}")
-            self._log_status(f"Error generating tasks: {e}", Phase.ERROR)
-            return []
+        # Update parser with current project info
+        self.task_parser.project_name = self.project_name
+        self.task_parser.project_description = self.project_description
+        self.task_parser.adapter = self.adapter
+        self.task_parser.model = self.model
+        return self.task_parser.generate_tasks_from_description()
     
     def _add_tasks_to_fix_plan(self, tasks: List[str]) -> bool:
+        """Add tasks to @fix_plan.md.
+        
+        Args:
+            tasks: List of task descriptions to add
+            
+        Returns:
+            True if tasks were added successfully
+        """
+        return self.task_parser.add_tasks_to_fix_plan(tasks)
+    
+    def _add_tasks_to_fix_plan_old(self, tasks: List[str]) -> bool:
         """Add tasks to @fix_plan.md in High Priority section.
         
         Args:
@@ -719,6 +554,8 @@ For multiple files, provide each file separately."""
             # Set expected files count for progress tracking
             self.files_expected = len(files_created)
             self.files_created_count = 0
+            # Sync to progress tracker
+            self.progress_tracker.set_files_expected(self.files_expected)
             
             if not files_created:
                 self._log_status("No code blocks found in response", Phase.IMPLEMENT)
@@ -772,6 +609,8 @@ For multiple files, provide each file separately."""
                         file_path.write_text(file_info['content'])
                         written_files.append(str(file_path.relative_to(self.project_path)))
                         self.files_created_count += 1
+                        # Sync to progress tracker
+                        self.progress_tracker.increment_files_created()
                         self._log_status(
                             f"Created file: {file_info['path']} ({self.files_created_count}/{self.files_expected})",
                             Phase.IMPLEMENT
@@ -1010,6 +849,49 @@ For multiple files, provide each file separately."""
         # Look for patterns like "file: path", "path: path", "create: path"
         # Limit search to first 500 chars to avoid false matches in large code blocks
         content_preview = content[:500] if len(content) > 500 else content
+        
+        # First, try to extract common Electron/file patterns from content
+        # Common file names that appear in code comments or content
+        common_file_patterns = [
+            (r'package\.json', 'package.json'),
+            (r'main\.js', 'main.js'),
+            (r'index\.html', 'index.html'),
+            (r'index\.js', 'index.js'),
+            (r'app\.js', 'app.js'),
+            (r'preload\.js', 'preload.js'),
+            (r'renderer\.js', 'renderer.js'),
+            (r'styles\.css', 'styles.css'),
+            (r'app\.css', 'app.css'),
+        ]
+        
+        # Check if content mentions common file names (but not in comment patterns like /app/package.json)
+        for pattern, filename in common_file_patterns:
+            # Look for the pattern but not as part of a comment path like /app/package.json
+            # Check if it appears as a standalone reference or in a meaningful context
+            matches = list(re.finditer(pattern, content_preview, re.IGNORECASE))
+            for match in matches:
+                # Check context around the match
+                start = max(0, match.start() - 20)
+                end = min(len(content_preview), match.end() + 20)
+                context = content_preview[start:end]
+                
+                # Ignore if it's clearly a comment path like /app/package.json or //app/package.json
+                if re.search(r'[/\\]\w+[/\\]' + pattern, context, re.IGNORECASE):
+                    continue
+                
+                # If it's in a string literal, comment, or standalone, use it
+                # Check if it's in quotes (string literal) or after // or # (comment)
+                before_match = content_preview[max(0, match.start() - 1):match.start()]
+                if any(char in before_match for char in ['"', "'", '`', '//', '#']):
+                    # It's in a string or comment - check if it's a meaningful reference
+                    # Look for patterns like "package.json" or loadFile('index.html')
+                    if re.search(r'["\'`]\s*' + pattern + r'\s*["\'`]', context, re.IGNORECASE):
+                        return self._sanitize_file_path(filename)
+                else:
+                    # Standalone reference - likely the file being created
+                    return self._sanitize_file_path(filename)
+        
+        # Now try explicit path patterns
         path_patterns = [
             r'(?:file|path|create|save|write)[:\s]+([^\s\n]+(?:\s+[^\s\n]+)*)',  # Handles paths with spaces
             r'#\s*(?:file|path|create)[:\s]+([^\n]+)',  # Comment-based path hints
@@ -1024,6 +906,13 @@ For multiple files, provide each file separately."""
                 # Clean up common prefixes/suffixes
                 extracted_path = re.sub(r'^(?:file|path|create|save|write)[:\s]+', '', extracted_path, flags=re.IGNORECASE)
                 extracted_path = extracted_path.strip('"\'`<>')
+                
+                # Ignore comment patterns like /app/package.json that appear in code
+                # These are usually documentation, not actual file paths
+                if re.match(r'^[/\\]\w+[/\\]', extracted_path):
+                    # Looks like a comment path - skip it
+                    continue
+                
                 # Limit extracted path length to avoid false matches
                 if extracted_path and len(extracted_path) <= 200:
                     return self._sanitize_file_path(extracted_path)
@@ -1031,9 +920,55 @@ For multiple files, provide each file separately."""
         # Try to infer file extension from content (language detection)
         inferred_ext = self._infer_file_extension(content)
         
+        # Try to generate meaningful name based on content analysis
+        meaningful_name = self._generate_meaningful_filename(content, file_index, inferred_ext)
+        if meaningful_name:
+            return meaningful_name
+        
         # Default: generate a name based on index with inferred extension
         result = f"generated_{file_index}{inferred_ext}"
         return result
+    
+    def _generate_meaningful_filename(self, content: str, file_index: int, extension: str) -> Optional[str]:
+        """Generate a meaningful filename based on content analysis.
+        
+        Args:
+            content: Code content
+            file_index: Current file index
+            extension: Inferred file extension
+            
+        Returns:
+            Meaningful filename or None if cannot determine
+        """
+        content_lower = content.lower()
+        
+        # Electron app patterns
+        if extension == '.js' and any(pattern in content_lower for pattern in [
+            'browserwindow', 'app.whenready', 'mainwindow', 'electron'
+        ]):
+            return 'main.js'
+        
+        if extension == '.html' and ('<html' in content_lower or '<!doctype' in content_lower):
+            return 'index.html'
+        
+        if extension == '.json' and ('"name"' in content_lower and '"version"' in content_lower):
+            return 'package.json'
+        
+        if extension == '.css' and ('body' in content_lower or 'html' in content_lower):
+            return 'styles.css'
+        
+        # Check for function/class names that could be used as filenames
+        # Extract potential names from code
+        if extension == '.js':
+            # Look for module.exports or export default patterns
+            export_match = re.search(r'(?:module\.exports|export\s+(?:default\s+)?(?:function|class|const|let)\s+)(\w+)', content)
+            if export_match:
+                name = export_match.group(1).lower()
+                # Convert camelCase to kebab-case
+                name = re.sub(r'([a-z])([A-Z])', r'\1-\2', name).lower()
+                return f"{name}{extension}"
+        
+        return None
     
     def _infer_file_extension(self, content: str) -> str:
         """Infer file extension from code content.
@@ -1044,32 +979,101 @@ For multiple files, provide each file separately."""
         Returns:
             File extension (e.g., '.py', '.js', etc.)
         """
-        content_lower = content.lower().strip()
+        # Strip leading comments/metadata that might confuse detection
+        # Look for actual code content, not just comments
+        content_clean = content.strip()
         
-        # Python indicators
-        if any(keyword in content_lower for keyword in ['def ', 'import ', 'from ', 'class ', 'if __name__']):
-            return '.py'
+        # Remove leading comment lines (//, #, /* */)
+        lines = content_clean.split('\n')
+        code_lines = []
+        for line in lines:
+            stripped = line.strip()
+            # Skip comment-only lines
+            if stripped.startswith('//') or stripped.startswith('#') or stripped.startswith('/*') or stripped.startswith('*'):
+                continue
+            if stripped and not stripped.startswith('<!--'):
+                code_lines.append(line)
+        
+        # Use cleaned content for detection if we have actual code
+        if code_lines:
+            content_clean = '\n'.join(code_lines)
+        
+        content_lower = content_clean.lower()
+        
+        # Electron/Node.js indicators (check before general JS to prioritize)
+        electron_patterns = [
+            "require('electron')", "require(\"electron\")",
+            'browserwindow', 'app.whenready', 'ipcrenderer',
+            'electron', 'mainwindow', 'webcontents'
+        ]
+        if any(pattern in content_lower for pattern in electron_patterns):
+            return '.js'
+        
+        # Package.json detection - look for JSON structure with package.json fields
+        if ('"name"' in content_lower and '"version"' in content_lower) or \
+           ('"main"' in content_lower and '"scripts"' in content_lower):
+            # Try to parse as JSON
+            try:
+                import json
+                # Remove leading comments for JSON parsing
+                json_content = content_clean
+                # Remove single-line comments
+                json_lines = []
+                for line in json_content.split('\n'):
+                    if '//' in line:
+                        line = line[:line.index('//')]
+                    json_lines.append(line)
+                json_content = '\n'.join(json_lines)
+                json.loads(json_content)
+                return '.json'
+            except Exception:
+                pass
+        
+        # Python indicators (more specific to avoid false positives)
+        python_keywords = ['def ', 'import ', 'from ', 'class ', 'if __name__', 'print(', '__init__']
+        if any(keyword in content_lower for keyword in python_keywords):
+            # Make sure it's not JavaScript with similar patterns
+            if not any(js_pattern in content_lower for js_pattern in ['const ', 'let ', 'var ', 'function ', 'require(']):
+                return '.py'
         
         # JavaScript/TypeScript indicators
-        if any(keyword in content_lower for keyword in ['function ', 'const ', 'let ', 'var ', 'export ', 'import ']):
-            if 'typescript' in content_lower or 'interface ' in content_lower or ': ' in content[:100]:
+        js_keywords = ['function ', 'const ', 'let ', 'var ', 'export ', 'import ', 'require(']
+        if any(keyword in content_lower for keyword in js_keywords):
+            # TypeScript detection
+            if 'typescript' in content_lower or 'interface ' in content_lower or \
+               (': ' in content_clean[:200] and ('type ' in content_lower or 'interface' in content_lower)):
                 return '.ts'
             return '.js'
         
         # HTML indicators
-        if content_lower.strip().startswith('<!doctype') or '<html' in content_lower or '<div' in content_lower:
+        if content_clean.strip().startswith('<!doctype') or \
+           content_clean.strip().startswith('<html') or \
+           ('<html' in content_lower and '</html>' in content_lower) or \
+           ('<div' in content_lower and '</div>' in content_lower):
             return '.html'
         
         # CSS indicators
-        if '{' in content and ':' in content and ('color:' in content_lower or 'margin:' in content_lower):
+        if '{' in content_clean and ':' in content_clean and \
+           ('color:' in content_lower or 'margin:' in content_lower or 'padding:' in content_lower or
+            'font-' in content_lower or 'background' in content_lower):
             return '.css'
         
-        # JSON indicators
-        if (content.strip().startswith('{') and content.strip().endswith('}')) or \
-           (content.strip().startswith('[') and content.strip().endswith(']')):
+        # JSON indicators - improved detection
+        content_stripped = content_clean.strip()
+        if (content_stripped.startswith('{') and content_stripped.endswith('}')) or \
+           (content_stripped.startswith('[') and content_stripped.endswith(']')):
             try:
                 import json
-                json.loads(content)
+                # Try parsing after removing comments
+                json_content = content_stripped
+                # Remove single-line comments (//)
+                json_lines = []
+                for line in json_content.split('\n'):
+                    if '//' in line:
+                        line = line[:line.index('//')]
+                    json_lines.append(line)
+                json_content = '\n'.join(json_lines)
+                json.loads(json_content)
                 return '.json'
             except Exception:
                 pass
@@ -1082,8 +1086,21 @@ For multiple files, provide each file separately."""
         if content_lower.startswith('#!/bin/') or content_lower.startswith('#!/usr/bin/'):
             return '.sh'
         
-        # Default to .py if no match
-        return '.py'
+        # Default based on content hints - prefer .js over .py for ambiguous cases
+        # If content has any JS-like patterns, default to .js
+        if any(hint in content_lower for hint in ['const', 'let', 'var', 'function', 'require', 'module']):
+            return '.js'
+        
+        # If content looks like structured data but not valid JSON, could be config
+        if '{' in content_clean and '}' in content_clean and ':' in content_clean:
+            return '.json'
+        
+        # Last resort: default to .txt for truly unknown content
+        # Only default to .py if there are Python-like patterns
+        if any(hint in content_lower for hint in ['import ', 'def ', 'class ']):
+            return '.py'
+        
+        return '.txt'
     
     def _phase_test(self, task: str) -> Dict[str, Any]:
         """Execute Test phase.
@@ -1175,28 +1192,7 @@ Provide test cases and validation steps. If tests exist, suggest running them. I
         Returns:
             True if error is critical
         """
-        # Critical errors that should stop execution
-        critical_patterns = [
-            'permission denied',
-            'disk full',
-            'out of memory',
-            'connection refused',
-            'timeout',
-            'authentication failed',
-            'invalid api key'
-        ]
-        
-        error_lower = error.lower()
-        for pattern in critical_patterns:
-            if pattern in error_lower:
-                return True
-        
-        # UPDATE phase errors are usually non-critical (just marking tasks)
-        if phase == Phase.UPDATE:
-            return False
-        
-        # Other errors are generally non-critical (can retry or continue)
-        return False
+        return self.error_recovery.is_critical_error(error, phase)
     
     def _execute_phase(self, phase: Phase, task: str, previous_output: Optional[str] = None, retry_count: int = 0) -> Dict[str, Any]:
         """Execute a single phase with retry logic.
@@ -1216,6 +1212,9 @@ Provide test cases and validation steps. If tests exist, suggest running them. I
         # Track phase start time for progress calculation
         phase_start = datetime.now()
         self.phase_start_time = phase_start
+        # Sync to progress tracker
+        self.progress_tracker.start_phase(phase)
+        self.progress_tracker.phase_start_time = self.phase_start_time
         
         phase_entry = {
             'phase': phase.value,
@@ -1232,6 +1231,9 @@ Provide test cases and validation steps. If tests exist, suggest running them. I
         self.current_phase_progress = 0.0
         self.files_created_count = 0
         self.files_expected = 0
+        # Sync to progress tracker
+        self.progress_tracker.set_files_expected(0)
+        self.progress_tracker.files_created_count = 0
         
         try:
             if phase == Phase.STUDY:
@@ -1252,6 +1254,10 @@ Provide test cases and validation steps. If tests exist, suggest running them. I
             if phase.value not in self.phase_durations:
                 self.phase_durations[phase.value] = []
             self.phase_durations[phase.value].append(phase_duration)
+            # Sync to progress tracker
+            self.progress_tracker.phase_durations = self.phase_durations
+            # Record in progress tracker
+            self.progress_tracker.record_phase_completion(phase, phase_duration)
             # Keep only last 10 durations
             if len(self.phase_durations[phase.value]) > 10:
                 self.phase_durations[phase.value] = self.phase_durations[phase.value][-10:]
@@ -1266,28 +1272,30 @@ Provide test cases and validation steps. If tests exist, suggest running them. I
             self.current_phase_progress = 1.0
             
             # If phase failed, check if we should retry
-            if not result.get('success', False) and retry_count < self.max_retries:
+            if not result.get('success', False):
                 error = result.get('error', 'Unknown error')
                 
                 # Check if error is critical
-                if self._is_critical_error(error, phase):
+                if self.error_recovery.is_critical_error(error, phase):
                     self._log_status(f"Critical error in {phase.value} phase: {error}. Stopping.", phase)
                     phase_entry['error'] = f"Critical: {error}"
                     self.phase_history.append(phase_entry)
                     return result
                 
-                # Non-critical error - retry
-                self._log_status(
-                    f"Phase {phase.value} failed (attempt {retry_count + 1}/{self.max_retries + 1}): {error}. Retrying...",
-                    phase
-                )
-                time.sleep(self.retry_delay)
-                return self._execute_phase(phase, task, previous_output, retry_count + 1)
+                # Check if should retry
+                if self.error_recovery.should_retry(error, phase, retry_count):
+                    self._log_status(
+                        f"Phase {phase.value} failed (attempt {retry_count + 1}/{self.max_retries + 1}): {error}. Retrying...",
+                        phase
+                    )
+                    retry_delay = self.error_recovery.get_retry_delay(retry_count)
+                    time.sleep(retry_delay)
+                    return self._execute_phase(phase, task, previous_output, retry_count + 1)
             
             # If still failed after retries, check if we should continue
             if not result.get('success', False) and self.continue_on_non_critical:
                 error = result.get('error', 'Unknown error')
-                if not self._is_critical_error(error, phase):
+                if not self.error_recovery.is_critical_error(error, phase):
                     self._log_status(
                         f"Phase {phase.value} failed after {retry_count + 1} attempts: {error}. Continuing anyway.",
                         phase

@@ -38,11 +38,8 @@ python3 tests/test_connection.py
 import sys
 from pathlib import Path
 
-# Setup paths
-lib_path = Path('lib')
-integration_path = Path('integration')
-sys.path.insert(0, str(lib_path))
-sys.path.insert(0, str(integration_path))
+from lib.path_utils import setup_paths
+setup_paths()
 
 from ralph_ollama_adapter import call_llm
 
@@ -298,9 +295,8 @@ Make sure paths are set correctly:
 import sys
 from pathlib import Path
 
-# Add paths BEFORE imports
-lib_path = Path('lib')
-sys.path.insert(0, str(lib_path))
+from lib.path_utils import setup_paths
+setup_paths()
 ```
 
 ---

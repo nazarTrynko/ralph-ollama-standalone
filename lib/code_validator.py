@@ -72,32 +72,88 @@ class CodeValidator:
         # Check file extension
         ext = file_path.suffix.lower()
         
-        # Validate Python files
+        # Check for common issues
+        if not content.strip():
+            result['warnings'].append("File is empty")
+            return result
+        
+        # Validate based on file extension
         if ext == '.py':
+            # Only validate Python syntax for .py files
             is_valid, error = self.validate_python_syntax(content, str(file_path))
             if not is_valid:
                 result['valid'] = False
                 result['errors'].append(error)
+        elif ext == '.json':
+            # Validate JSON syntax
+            is_valid, error = self.validate_json_syntax(content, str(file_path))
+            if not is_valid:
+                result['valid'] = False
+                result['errors'].append(error)
+        elif ext in ['.js', '.ts', '.jsx', '.tsx']:
+            # JavaScript/TypeScript files - skip validation for now
+            # Could add node/eslint validation in the future if available
+            pass
+        elif ext in ['.html', '.css', '.md', '.txt', '.sh']:
+            # Text-based files - no syntax validation needed
+            pass
+        else:
+            # Unknown extension - check if content looks like Python (might be misnamed)
+            if any(keyword in content.lower() for keyword in ['def ', 'import ', 'from ', 'class ']):
+                if 'const ' not in content.lower() and 'let ' not in content.lower() and 'function ' not in content.lower():
+                    result['warnings'].append(f"File has extension {ext} but contains Python-like code")
         
-        # Check for common issues
-        if not content.strip():
-            result['warnings'].append("File is empty")
-        
-        # Check for suspicious patterns (basic security check)
-        suspicious_patterns = [
-            ('import os', 'os.system'),
-            ('import subprocess', 'subprocess.call'),
-            ('import sys', 'sys.exit'),
-            ('eval(', 'eval'),
-            ('exec(', 'exec'),
-            ('__import__', '__import__'),
-        ]
-        
-        for pattern, name in suspicious_patterns:
-            if pattern in content:
-                result['warnings'].append(f"Contains potentially unsafe code: {name}")
+        # Check for suspicious patterns (basic security check) - only for code files
+        if ext in ['.py', '.js', '.ts', '.jsx', '.tsx', '.sh']:
+            suspicious_patterns = [
+                ('import os', 'os.system'),
+                ('import subprocess', 'subprocess.call'),
+                ('import sys', 'sys.exit'),
+                ('eval(', 'eval'),
+                ('exec(', 'exec'),
+                ('__import__', '__import__'),
+            ]
+            
+            for pattern, name in suspicious_patterns:
+                if pattern in content:
+                    result['warnings'].append(f"Contains potentially unsafe code: {name}")
         
         return result
+    
+    def validate_json_syntax(self, code: str, file_path: str = "unknown") -> Tuple[bool, Optional[str]]:
+        """Validate JSON syntax.
+        
+        Args:
+            code: JSON code to validate
+            file_path: Path to the file (for error messages)
+            
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        try:
+            import json
+            # Remove single-line comments (//) which some JSON variants allow
+            json_content = code
+            json_lines = []
+            for line in json_content.split('\n'):
+                # Remove // comments
+                if '//' in line:
+                    line = line[:line.index('//')]
+                json_lines.append(line)
+            json_content = '\n'.join(json_lines)
+            
+            json.loads(json_content)
+            return True, None
+        except json.JSONDecodeError as e:
+            error_msg = f"JSON syntax error in {file_path} at line {e.lineno}: {e.msg}"
+            if e.doc:
+                # Show context around error
+                lines = e.doc.split('\n')
+                if e.lineno <= len(lines):
+                    error_msg += f"\n  {lines[e.lineno - 1].strip()}"
+            return False, error_msg
+        except Exception as e:
+            return False, f"Error parsing JSON in {file_path}: {str(e)}"
     
     def execute_python_file(self, file_path: Path, args: Optional[List[str]] = None) -> Dict[str, Any]:
         """Execute a Python file safely.

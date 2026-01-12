@@ -90,12 +90,8 @@ ralph-ollama-standalone/
 ### Basic Usage
 
 ```python
-import sys
-from pathlib import Path
-
-# Add lib to path
-sys.path.insert(0, 'lib')
-sys.path.insert(0, 'integration')
+from lib.path_utils import setup_paths
+setup_paths()
 
 from ralph_ollama_adapter import call_llm
 

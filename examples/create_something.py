@@ -7,10 +7,8 @@ Demonstrates using Ollama to generate code, tests, and documentation.
 import sys
 from pathlib import Path
 
-# Add project root to path to enable package imports
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+from lib.path_utils import setup_paths
+setup_paths()
 
 from integration.ralph_ollama_adapter import call_llm, RalphOllamaAdapter
 

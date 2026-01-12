@@ -13,10 +13,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+from lib.path_utils import setup_paths
+setup_paths()
 
 from lib.ralph_loop_engine import RalphLoopEngine, LoopMode, Phase
 from integration.ralph_ollama_adapter import RalphOllamaAdapter
