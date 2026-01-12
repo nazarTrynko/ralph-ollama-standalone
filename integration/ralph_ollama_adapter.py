@@ -31,6 +31,7 @@ from lib.exceptions import (
     OllamaConfigError,
 )
 from lib.logging_config import get_logger
+from lib.response_cache import get_cache
 
 logger = get_logger('adapter')
 
@@ -77,6 +78,21 @@ class RalphOllamaAdapter:
             logger.debug(f"Auto-selected model '{model}' for task type '{task_type}'")
         
         logger.info(f"Generating response: task_type={task_type}, model={model}")
+        
+        # Check cache
+        cache = get_cache()
+        cache_key = {
+            'prompt': prompt,
+            'system_prompt': system_prompt,
+            'model': model,
+            'kwargs': kwargs
+        }
+        cached_response = cache.get('llm_response', cache_key)
+        
+        if cached_response:
+            logger.debug("Using cached LLM response")
+            return cached_response
+        
         # Generate response
         result = self.client.generate(
             prompt=prompt,
@@ -86,13 +102,18 @@ class RalphOllamaAdapter:
         )
         
         # Format response to match Ralph workflow expectations
-        return {
+        response = {
             'content': result['response'],
             'model': result['model'],
             'provider': 'ollama',
             'tokens': result.get('tokens', {}),
             'done': result.get('done', True)
         }
+        
+        # Cache response
+        cache.set('llm_response', cache_key, response)
+        
+        return response
     
     def _select_model_for_task(self, task_type: str) -> str:
         """Select appropriate model for task type."""

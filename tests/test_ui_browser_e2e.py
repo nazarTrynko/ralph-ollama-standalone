@@ -20,8 +20,9 @@ except ImportError:
     sys.exit(1)
 
 import subprocess
+import shutil
 import requests
-from typing import Optional
+from typing import Optional, List
 
 
 class BrowserE2ETestRunner:
@@ -34,6 +35,8 @@ class BrowserE2ETestRunner:
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
+        self.test_project_names: List[str] = []
+        self.projects_dir = project_root / 'projects'
         
     def start_server(self) -> bool:
         """Start Flask server."""
@@ -94,6 +97,20 @@ class BrowserE2ETestRunner:
         if hasattr(self, 'playwright'):
             self.playwright.stop()
     
+    def cleanup_test_projects(self):
+        """Clean up test projects created during tests."""
+        if not self.projects_dir.exists():
+            return
+        
+        for project_name in self.test_project_names:
+            project_path = self.projects_dir / project_name
+            if project_path.exists() and project_path.is_dir():
+                try:
+                    shutil.rmtree(project_path)
+                    print(f"  🗑️  Cleaned up test project: {project_name}")
+                except Exception as e:
+                    print(f"  ⚠️  Could not remove {project_path}: {e}")
+    
     def test_homepage_loads(self) -> bool:
         """Test that homepage loads correctly."""
         try:
@@ -105,9 +122,9 @@ class BrowserE2ETestRunner:
             # Check main heading
             expect(self.page.locator("h1")).to_contain_text("Ralph Ollama")
             
-            # Check tabs exist
-            expect(self.page.locator("text=Send Prompt")).to_be_visible()
-            expect(self.page.locator("text=Ralph Loop")).to_be_visible()
+            # Check tabs exist (use button selector to avoid matching h2)
+            expect(self.page.locator("button.tab").filter(has_text="Send Prompt")).to_be_visible()
+            expect(self.page.locator("button.tab").filter(has_text="Ralph Loop")).to_be_visible()
             
             return True
         except Exception as e:
@@ -198,7 +215,9 @@ class BrowserE2ETestRunner:
             expect(self.page.locator("#ralphStartForm")).to_be_visible()
             
             # Fill project form
-            self.page.fill("#projectName", "BrowserTestProject")
+            project_name = "BrowserTestProject"
+            self.test_project_names.append(project_name)
+            self.page.fill("#projectName", project_name)
             self.page.fill("#projectDescription", "A test project created by browser tests")
             self.page.fill("#initialTask", "Create a simple hello world script")
             
@@ -230,7 +249,9 @@ class BrowserE2ETestRunner:
             
             # Start a loop first
             self.page.click("text=Ralph Loop")
-            self.page.fill("#projectName", "StatusTestProject")
+            project_name = "StatusTestProject"
+            self.test_project_names.append(project_name)
+            self.page.fill("#projectName", project_name)
             self.page.fill("#projectDescription", "Testing status updates")
             self.page.fill("#initialTask", "Create a test file")
             self.page.check("#modePhase")
@@ -263,21 +284,28 @@ class BrowserE2ETestRunner:
         try:
             self.page.goto(self.base_url)
             
-            # Start a loop
+            # Start a loop in non-stop mode (pause button will be visible)
             self.page.click("text=Ralph Loop")
-            self.page.fill("#projectName", "ControlsTestProject")
+            project_name = "ControlsTestProject"
+            self.test_project_names.append(project_name)
+            self.page.fill("#projectName", project_name)
             self.page.fill("#projectDescription", "Testing controls")
             self.page.fill("#initialTask", "Create a test")
-            self.page.check("#modePhase")
+            self.page.check("#modeNonStop")  # Use non-stop mode for this test
             self.page.click("#startRalphBtn")
             
             # Wait for controls
             expect(self.page.locator("#ralphControls")).to_be_visible(timeout=10000)
             
-            # Test pause button
+            # Wait for loop to start and pause button to be visible
+            # In non-stop mode, pause button should be visible when loop is running
             pause_btn = self.page.locator("#pauseBtn")
-            expect(pause_btn).to_be_visible()
+            # Wait for pause button to be visible (not hidden)
+            expect(pause_btn).to_be_visible(timeout=15000)
+            
+            # Test pause button
             pause_btn.click()
+            time.sleep(1)  # Wait for pause to take effect
             
             # Wait a bit for pause to take effect
             time.sleep(2)
@@ -313,7 +341,9 @@ class BrowserE2ETestRunner:
             
             # Start a loop
             self.page.click("text=Ralph Loop")
-            self.page.fill("#projectName", "FileListTestProject")
+            project_name = "FileListTestProject"
+            self.test_project_names.append(project_name)
+            self.page.fill("#projectName", project_name)
             self.page.fill("#projectDescription", "Testing file list")
             self.page.fill("#initialTask", "Create a README file")
             self.page.check("#modeNonStop")  # Use non-stop for faster execution
@@ -409,6 +439,11 @@ class BrowserE2ETestRunner:
             traceback.print_exc()
             return 1
         finally:
+            # Clean up test projects
+            if self.test_project_names:
+                print("\n🧹 Cleaning up test projects...")
+                self.cleanup_test_projects()
+            
             self.teardown_browser()
             if start_server:
                 self.stop_server()

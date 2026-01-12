@@ -1,6 +1,6 @@
-# TestProject1
+# Video ideas
 
-A test project for e2e testing
+somatic Video ideas
 
 ## Project Status
 

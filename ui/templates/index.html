@@ -232,6 +232,190 @@
             margin-top: 10px;
         }
 
+        .error-enhanced {
+            background: #fff5f5;
+            border: 2px solid #fc8181;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 12px 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .error-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .error-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            color: #c53030;
+            font-size: 16px;
+        }
+
+        .error-icon {
+            font-size: 20px;
+        }
+
+        .error-message {
+            color: #742a2a;
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+
+        .error-details-toggle {
+            background: none;
+            border: none;
+            color: #c53030;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: underline;
+            padding: 4px 8px;
+            margin-top: 8px;
+        }
+
+        .error-details-toggle:hover {
+            color: #9b2c2c;
+        }
+
+        .error-details {
+            display: none;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #fc8181;
+        }
+
+        .error-details.expanded {
+            display: block;
+        }
+
+        .error-details pre {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 12px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 13px;
+            margin: 8px 0;
+        }
+
+        .error-suggestions {
+            background: #fffbf0;
+            border-left: 4px solid #f6ad55;
+            padding: 12px;
+            margin-top: 12px;
+            border-radius: 4px;
+        }
+
+        .error-suggestions h4 {
+            margin: 0 0 8px 0;
+            color: #c05621;
+            font-size: 14px;
+        }
+
+        .error-suggestions ul {
+            margin: 0;
+            padding-left: 20px;
+            color: #744210;
+        }
+
+        .error-suggestions li {
+            margin: 4px 0;
+        }
+
+        .error-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+
+        .error-action-btn {
+            padding: 6px 12px;
+            border: 1px solid #c53030;
+            background: white;
+            color: #c53030;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .error-action-btn:hover {
+            background: #c53030;
+            color: white;
+        }
+
+        .error-action-btn.secondary {
+            border-color: #718096;
+            color: #4a5568;
+        }
+
+        .error-action-btn.secondary:hover {
+            background: #718096;
+            color: white;
+        }
+
+        /* Progress Indicators */
+        .progress-section {
+            background: #f7fafc;
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            margin-bottom: 16px;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 24px;
+            background: #e2e8f0;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            transition: width 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .progress-bar::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 255, 255, 0.3),
+                transparent
+            );
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .progress-bar.phase-progress {
+            background: linear-gradient(90deg, #48bb78 0%, #38a169 100%);
+        }
+
+        .progress-bar.file-progress {
+            background: linear-gradient(90deg, #4299e1 0%, #3182ce 100%);
+        }
+
         .success {
             background: #d4edda;
             color: #155724;
@@ -301,30 +485,93 @@
             color: #333;
         }
 
+        /* Phase Timeline */
+        .phase-timeline {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .timeline-track {
+            position: absolute;
+            top: 30px;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: #e2e8f0;
+            border-radius: 2px;
+            z-index: 0;
+        }
+
+        .timeline-progress {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 2px;
+            transition: width 0.5s ease;
+            width: 0%;
+        }
+
         .phase-indicator {
             display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
+            justify-content: space-between;
+            position: relative;
+            z-index: 1;
+            margin-top: 10px;
+            gap: 0;
         }
 
         .phase-badge {
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 14px;
-            font-weight: 500;
-            background: #e0e0e0;
-            color: #666;
+            flex: 1;
+            text-align: center;
+            padding: 12px 8px;
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            margin: 0 4px;
+            transition: all 0.3s;
+            cursor: default;
         }
 
         .phase-badge.active {
-            background: #667eea;
-            color: white;
+            border-color: #667eea;
+            background: #f0f4ff;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+            transform: scale(1.05);
         }
 
         .phase-badge.complete {
-            background: #28a745;
-            color: white;
+            border-color: #48bb78;
+            background: #f0fff4;
+        }
+
+        .phase-badge.complete .phase-icon::after {
+            content: ' ✓';
+            color: #48bb78;
+        }
+
+        .phase-icon {
+            font-size: 24px;
+            margin-bottom: 4px;
+        }
+
+        .phase-name {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .phase-time {
+            font-size: 11px;
+            color: #666;
+            min-height: 14px;
+        }
+
+        .phase-badge.active .phase-name {
+            color: #667eea;
+        }
+
+        .phase-badge.complete .phase-name {
+            color: #48bb78;
         }
 
         .status-log {
@@ -395,6 +642,136 @@
             background: #f8d7da;
             color: #721c24;
         }
+
+        .file-item {
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .file-item:hover {
+            background: #f0f0f0;
+        }
+
+        /* File Preview Modal */
+        .file-preview-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .file-preview-content {
+            background: white;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 1200px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .file-preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .file-preview-header h3 {
+            margin: 0;
+            color: #333;
+            font-size: 20px;
+        }
+
+        .file-preview-close {
+            background: none;
+            border: none;
+            font-size: 32px;
+            color: #666;
+            cursor: pointer;
+            padding: 0;
+            width: 40px;
+            height: 40px;
+            line-height: 40px;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+
+        .file-preview-close:hover {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .file-preview-toolbar {
+            display: flex;
+            gap: 10px;
+            padding: 12px 20px;
+            border-bottom: 1px solid #e2e8f0;
+            align-items: center;
+        }
+
+        .file-preview-editor {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+        }
+
+        #filePreviewEditor {
+            width: 100%;
+            height: 100%;
+            border: none;
+            padding: 20px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            resize: none;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            tab-size: 4;
+            outline: none;
+        }
+
+        #filePreviewSyntax {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            margin: 0;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            overflow: auto;
+            pointer-events: none;
+            white-space: pre;
+            tab-size: 4;
+        }
+
+        #filePreviewCode {
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Basic syntax highlighting */
+        .syntax-keyword { color: #569cd6; }
+        .syntax-string { color: #ce9178; }
+        .syntax-comment { color: #6a9955; }
+        .syntax-function { color: #dcdcaa; }
+        .syntax-number { color: #b5cea8; }
+        .syntax-operator { color: #d4d4d4; }
 
         .radio-group {
             display: flex;
@@ -558,11 +935,75 @@
                 <div class="main-content" style="margin-top: 20px;">
                     <div class="panel">
                         <h2>📈 Phase Progress</h2>
-                        <div class="phase-indicator" id="phaseIndicator">
-                            <div class="phase-badge" data-phase="study">Study</div>
-                            <div class="phase-badge" data-phase="implement">Implement</div>
-                            <div class="phase-badge" data-phase="test">Test</div>
-                            <div class="phase-badge" data-phase="update">Update</div>
+                        
+                        <!-- Overall Task Progress -->
+                        <div class="progress-section" style="margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                <span style="font-weight: 500;">Task Progress</span>
+                                <span id="taskProgressPercent" style="color: #667eea; font-weight: 600;">0%</span>
+                            </div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar" id="taskProgressBar" style="width: 0%;"></div>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 12px; color: #666;">
+                                <span id="taskElapsedTime">Elapsed: 0s</span>
+                                <span id="taskTimeRemaining" style="display: none;">Remaining: ~0s</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Current Phase Progress -->
+                        <div class="progress-section" style="margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                <span style="font-weight: 500;">Current Phase</span>
+                                <span id="phaseProgressPercent" style="color: #667eea; font-weight: 600;">0%</span>
+                            </div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar phase-progress" id="phaseProgressBar" style="width: 0%;"></div>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 12px; color: #666;">
+                                <span id="currentOperation">Initializing...</span>
+                                <span id="phaseTimeRemaining" style="display: none;">~0s remaining</span>
+                            </div>
+                        </div>
+                        
+                        <!-- File Creation Progress -->
+                        <div class="progress-section" id="fileProgressSection" style="margin-bottom: 20px; display: none;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                <span style="font-weight: 500;">File Creation</span>
+                                <span id="fileProgressText" style="color: #667eea; font-weight: 600;">0/0</span>
+                            </div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar file-progress" id="fileProgressBar" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- Phase Timeline -->
+                        <div class="phase-timeline" id="phaseTimeline" style="margin-bottom: 20px;">
+                            <div class="timeline-track">
+                                <div class="timeline-progress" id="timelineProgress"></div>
+                            </div>
+                            <div class="phase-indicator" id="phaseIndicator">
+                                <div class="phase-badge" data-phase="study">
+                                    <div class="phase-icon">📚</div>
+                                    <div class="phase-name">Study</div>
+                                    <div class="phase-time" id="phaseTime-study"></div>
+                                </div>
+                                <div class="phase-badge" data-phase="implement">
+                                    <div class="phase-icon">⚙️</div>
+                                    <div class="phase-name">Implement</div>
+                                    <div class="phase-time" id="phaseTime-implement"></div>
+                                </div>
+                                <div class="phase-badge" data-phase="test">
+                                    <div class="phase-icon">🧪</div>
+                                    <div class="phase-name">Test</div>
+                                    <div class="phase-time" id="phaseTime-test"></div>
+                                </div>
+                                <div class="phase-badge" data-phase="update">
+                                    <div class="phase-icon">✅</div>
+                                    <div class="phase-name">Update</div>
+                                    <div class="phase-time" id="phaseTime-update"></div>
+                                </div>
+                            </div>
                         </div>
                         <div id="currentTask" style="margin-bottom: 15px; font-weight: 500; color: #333;"></div>
                         <div class="status-log" id="statusLog"></div>
@@ -576,6 +1017,26 @@
                             </p>
                         </div>
                     </div>
+                </div>
+                
+                <!-- File Preview Modal -->
+                <div class="file-preview-modal" id="filePreviewModal" style="display: none;">
+                    <div class="file-preview-content">
+                        <div class="file-preview-header">
+                            <h3 id="previewFileName">File Preview</h3>
+                            <button class="file-preview-close" onclick="closeFilePreview()">×</button>
+                        </div>
+                        <div class="file-preview-toolbar">
+                            <button class="btn btn-primary" id="saveFileBtn" onclick="saveFileContent()">Save Changes</button>
+                            <button class="btn btn-secondary" onclick="closeFilePreview()">Close</button>
+                            <span id="filePreviewStatus" style="margin-left: auto; color: #666; font-size: 14px;"></span>
+                        </div>
+                        <div class="file-preview-editor">
+                            <textarea id="filePreviewEditor" spellcheck="false"></textarea>
+                            <pre id="filePreviewSyntax"><code id="filePreviewCode"></code></pre>
+                        </div>
+                    </div>
+                </div>
                 </div>
             </div>
         </div>
@@ -711,14 +1172,315 @@
                     
                     metadata.style.display = 'block';
                 } else {
-                    responseArea.innerHTML = `<div class="error">Error: ${data.error || 'Unknown error'}</div>`;
+                    responseArea.innerHTML = formatError(data.error || 'Unknown error', 'Response Generation');
                 }
             } catch (error) {
                 console.error('Generation error:', error);
-                responseArea.innerHTML = `<div class="error">Error: ${error.message || 'Failed to connect to server. Make sure the Flask server is running.'}</div>`;
+                responseArea.innerHTML = formatError(
+                    error.message || 'Failed to connect to server. Make sure the Flask server is running.',
+                    'Connection Error',
+                    error
+                );
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Send to Ollama';
+            }
+        });
+
+        // Error formatting function
+        function formatError(errorMessage, errorType = 'Error', errorObject = null, actions = null, mode = 'full') {
+            const errorId = 'error-' + Date.now();
+            const isCompact = mode === 'compact';
+            
+            // Parse error message for better display
+            let userMessage = errorMessage;
+            let technicalDetails = '';
+            let suggestions = [];
+            
+            // Categorize errors and provide suggestions
+            const errorLower = errorMessage.toLowerCase();
+            if (errorLower.includes('connection') || errorLower.includes('failed to connect') || errorLower.includes('network')) {
+                userMessage = 'Unable to connect to the server';
+                technicalDetails = errorMessage;
+                suggestions = [
+                    'Check if the Flask server is running',
+                    'Verify the server URL is correct',
+                    'Check your network connection',
+                    'Try refreshing the page'
+                ];
+            } else if (errorLower.includes('timeout')) {
+                userMessage = 'Request timed out';
+                technicalDetails = errorMessage;
+                suggestions = [
+                    'The server may be busy, try again',
+                    'Check if Ollama is running and responsive',
+                    'Try using a smaller model',
+                    'Increase timeout settings if possible'
+                ];
+            } else if (errorLower.includes('permission') || errorLower.includes('access denied')) {
+                userMessage = 'Permission denied';
+                technicalDetails = errorMessage;
+                suggestions = [
+                    'Check file permissions',
+                    'Verify you have write access to the project directory',
+                    'Check if the directory exists'
+                ];
+            } else if (errorLower.includes('not found') || errorLower.includes('404')) {
+                userMessage = 'Resource not found';
+                technicalDetails = errorMessage;
+                suggestions = [
+                    'The requested resource may have been moved or deleted',
+                    'Check if the project path is correct',
+                    'Try refreshing the page'
+                ];
+            } else if (errorLower.includes('syntax') || errorLower.includes('parse')) {
+                userMessage = 'Code syntax error';
+                technicalDetails = errorMessage;
+                suggestions = [
+                    'Review the generated code for syntax errors',
+                    'Check for missing brackets, quotes, or semicolons',
+                    'Try regenerating the code'
+                ];
+            } else if (errorLower.includes('validation')) {
+                userMessage = 'Validation error';
+                technicalDetails = errorMessage;
+                suggestions = [
+                    'Check the input data format',
+                    'Verify all required fields are provided',
+                    'Review validation rules'
+                ];
+            }
+            
+            // Add stack trace if available
+            if (errorObject && errorObject.stack) {
+                technicalDetails += '\n\nStack trace:\n' + errorObject.stack;
+            }
+            
+            let actionsHTML = '';
+            if (actions && !isCompact) {
+                const actionButtons = Object.entries(actions).map(([key, action]) => {
+                    const labels = {
+                        retry: 'Retry',
+                        checkServer: 'Check Server',
+                        refresh: 'Refresh Page',
+                        dismiss: 'Dismiss'
+                    };
+                    const classes = key === 'dismiss' ? 'secondary' : '';
+                    return `<button class="error-action-btn ${classes}" onclick="(${action.toString()})()">${labels[key] || key}</button>`;
+                }).join('');
+                actionsHTML = `<div class="error-actions">${actionButtons}</div>`;
+            }
+            
+            let suggestionsHTML = '';
+            if (suggestions.length > 0 && !isCompact) {
+                suggestionsHTML = `
+                    <div class="error-suggestions">
+                        <h4>💡 Suggestions:</h4>
+                        <ul>
+                            ${suggestions.map(s => `<li>${s}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+            
+            if (isCompact) {
+                return `
+                    <div class="error-enhanced" style="padding: 8px; margin: 4px 0;">
+                        <div class="error-title">
+                            <span class="error-icon">⚠️</span>
+                            <span>${userMessage}</span>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            return `
+                <div class="error-enhanced" id="${errorId}">
+                    <div class="error-header">
+                        <div class="error-title">
+                            <span class="error-icon">⚠️</span>
+                            <span>${errorType}</span>
+                        </div>
+                        ${technicalDetails ? `<button class="error-details-toggle" onclick="toggleErrorDetails('${errorId}')">Show Details</button>` : ''}
+                    </div>
+                    <div class="error-message">${userMessage}</div>
+                    ${suggestionsHTML}
+                    ${technicalDetails ? `
+                        <div class="error-details" id="${errorId}-details">
+                            <pre>${escapeHtml(technicalDetails)}</pre>
+                        </div>
+                    ` : ''}
+                    ${actionsHTML}
+                </div>
+            `;
+        }
+        
+        function toggleErrorDetails(errorId) {
+            const details = document.getElementById(errorId + '-details');
+            const toggle = document.querySelector(`#${errorId} .error-details-toggle`);
+            if (details) {
+                details.classList.toggle('expanded');
+                if (toggle) {
+                    toggle.textContent = details.classList.contains('expanded') ? 'Hide Details' : 'Show Details';
+                }
+            }
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function formatTime(seconds) {
+            if (seconds < 60) {
+                return Math.round(seconds) + 's';
+            } else if (seconds < 3600) {
+                const minutes = Math.floor(seconds / 60);
+                const secs = Math.round(seconds % 60);
+                return minutes + 'm ' + secs + 's';
+            } else {
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                return hours + 'h ' + minutes + 'm';
+            }
+        }
+        
+        let currentPreviewFile = null;
+        
+        function isTextFileType(filePath) {
+            const textExtensions = ['.py', '.js', '.ts', '.jsx', '.tsx', '.html', '.css', '.json', '.md', '.txt', '.yml', '.yaml', '.xml', '.sh', '.bash', '.sql', '.go', '.rs', '.java', '.cpp', '.c', '.h', '.hpp', '.rb', '.php', '.swift', '.kt', '.scala', '.r', '.m', '.mm'];
+            const ext = filePath.toLowerCase().substring(filePath.lastIndexOf('.'));
+            return textExtensions.includes(ext);
+        }
+        
+        async function previewFile(filePath) {
+            if (!ralphSessionId) return;
+            
+            currentPreviewFile = filePath;
+            document.getElementById('filePreviewModal').style.display = 'flex';
+            document.getElementById('previewFileName').textContent = filePath;
+            document.getElementById('filePreviewEditor').value = 'Loading...';
+            document.getElementById('filePreviewStatus').textContent = '';
+            
+            try {
+                const response = await fetch(
+                    `/api/ralph/file/content?session_id=${encodeURIComponent(ralphSessionId)}&file_path=${encodeURIComponent(filePath)}`
+                );
+                const data = await response.json();
+                
+                if (data.success) {
+                    const content = data.content;
+                    document.getElementById('filePreviewEditor').value = content;
+                    updateSyntaxHighlighting(content, filePath);
+                    document.getElementById('filePreviewStatus').textContent = `Size: ${formatFileSize(data.size)}`;
+                } else {
+                    document.getElementById('filePreviewEditor').value = `Error: ${data.error}`;
+                    document.getElementById('filePreviewStatus').textContent = 'Error loading file';
+                }
+            } catch (error) {
+                document.getElementById('filePreviewEditor').value = `Error: ${error.message}`;
+                document.getElementById('filePreviewStatus').textContent = 'Error loading file';
+            }
+            
+            // Sync editor with syntax highlighting
+            document.getElementById('filePreviewEditor').addEventListener('input', function() {
+                updateSyntaxHighlighting(this.value, filePath);
+            });
+        }
+        
+        function updateSyntaxHighlighting(content, filePath) {
+            const codeEl = document.getElementById('filePreviewCode');
+            const ext = filePath.toLowerCase().substring(filePath.lastIndexOf('.'));
+            
+            // Basic syntax highlighting
+            let highlighted = escapeHtml(content);
+            
+            // Python highlighting
+            if (ext === '.py') {
+                highlighted = highlighted
+                    .replace(/\b(def|class|if|else|elif|for|while|try|except|finally|with|import|from|as|return|yield|pass|break|continue|lambda|and|or|not|in|is|True|False|None)\b/g, '<span class="syntax-keyword">$1</span>')
+                    .replace(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, '<span class="syntax-string">$1</span>')
+                    .replace(/#.*$/gm, '<span class="syntax-comment">$&</span>')
+                    .replace(/\b(\d+\.?\d*)\b/g, '<span class="syntax-number">$1</span>');
+            }
+            // JavaScript/TypeScript highlighting
+            else if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
+                highlighted = highlighted
+                    .replace(/\b(function|const|let|var|class|extends|import|export|default|async|await|return|if|else|for|while|try|catch|finally|throw|new|this|super|static|public|private|protected|true|false|null|undefined)\b/g, '<span class="syntax-keyword">$1</span>')
+                    .replace(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)/g, '<span class="syntax-string">$1</span>')
+                    .replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, '<span class="syntax-comment">$&</span>')
+                    .replace(/\b(\d+\.?\d*)\b/g, '<span class="syntax-number">$1</span>');
+            }
+            // HTML highlighting
+            else if (ext === '.html') {
+                highlighted = highlighted
+                    .replace(/&lt;(\/?)([\w-]+)/g, '<span class="syntax-keyword">&lt;$1$2</span>')
+                    .replace(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, '<span class="syntax-string">$1</span>')
+                    .replace(/&lt;!--[\s\S]*?--&gt;/g, '<span class="syntax-comment">$&</span>');
+            }
+            // CSS highlighting
+            else if (ext === '.css') {
+                highlighted = highlighted
+                    .replace(/([\w-]+)(?=\s*:)/g, '<span class="syntax-keyword">$1</span>')
+                    .replace(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, '<span class="syntax-string">$1</span>')
+                    .replace(/\/\*[\s\S]*?\*\//g, '<span class="syntax-comment">$&</span>')
+                    .replace(/(\d+\.?\d*)(px|em|rem|%|vh|vw)?/g, '<span class="syntax-number">$1$2</span>');
+            }
+            
+            codeEl.innerHTML = highlighted;
+        }
+        
+        function closeFilePreview() {
+            document.getElementById('filePreviewModal').style.display = 'none';
+            currentPreviewFile = null;
+        }
+        
+        async function saveFileContent() {
+            if (!ralphSessionId || !currentPreviewFile) return;
+            
+            const content = document.getElementById('filePreviewEditor').value;
+            const statusEl = document.getElementById('filePreviewStatus');
+            statusEl.textContent = 'Saving...';
+            
+            try {
+                const response = await fetch('/api/ralph/file/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: ralphSessionId,
+                        file_path: currentPreviewFile,
+                        content: content
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    statusEl.textContent = `Saved (${formatFileSize(data.size)})`;
+                    statusEl.style.color = '#28a745';
+                    setTimeout(() => {
+                        statusEl.style.color = '#666';
+                    }, 2000);
+                    
+                    // Update syntax highlighting
+                    updateSyntaxHighlighting(content, currentPreviewFile);
+                } else {
+                    statusEl.textContent = `Error: ${data.error}`;
+                    statusEl.style.color = '#dc3545';
+                }
+            } catch (error) {
+                statusEl.textContent = `Error: ${error.message}`;
+                statusEl.style.color = '#dc3545';
+            }
+        }
+        
+        // Close modal on escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && document.getElementById('filePreviewModal').style.display === 'flex') {
+                closeFilePreview();
             }
         });
 
@@ -769,15 +1531,35 @@
                     // Start status polling
                     startRalphStatusPolling();
                 } else {
-                    document.getElementById('ralphStatusArea').innerHTML = `
-                        <div class="error">Error: ${data.error || 'Failed to start loop'}</div>
-                    `;
+                    document.getElementById('ralphStatusArea').innerHTML = formatError(
+                        data.error || 'Failed to start loop',
+                        'Ralph Loop Start',
+                        null,
+                        {
+                            retry: () => {
+                                document.getElementById('ralphStartForm').dispatchEvent(new Event('submit'));
+                            },
+                            checkServer: () => {
+                                window.location.reload();
+                            }
+                        }
+                    );
                 }
             } catch (error) {
                 console.error('Error starting Ralph loop:', error);
-                document.getElementById('ralphStatusArea').innerHTML = `
-                    <div class="error">Error: ${error.message || 'Failed to connect to server'}</div>
-                `;
+                document.getElementById('ralphStatusArea').innerHTML = formatError(
+                    error.message || 'Failed to connect to server',
+                    'Connection Error',
+                    error,
+                    {
+                        retry: () => {
+                            document.getElementById('ralphStartForm').dispatchEvent(new Event('submit'));
+                        },
+                        checkServer: () => {
+                            window.location.reload();
+                        }
+                    }
+                );
             } finally {
                 startBtn.disabled = false;
                 startBtn.textContent = 'Start Ralph Loop';
@@ -785,28 +1567,139 @@
         });
 
         function startRalphStatusPolling() {
-            if (ralphStatusInterval) {
-                clearInterval(ralphStatusInterval);
+            // Stop any existing polling/SSE
+            stopRalphStatusPolling();
+            
+            // Try SSE first (more efficient)
+            if (typeof EventSource !== 'undefined') {
+                try {
+                    startRalphSSE();
+                    return;
+                } catch (e) {
+                    console.warn('SSE not available, falling back to polling:', e);
+                }
             }
             
-            // Poll status every 2 seconds
-            ralphStatusInterval = setInterval(updateRalphStatus, 2000);
-            updateRalphStatus();
-        }
+            // Fallback to polling with adaptive frequency
+            let pollInterval = 2000; // Start with 2 seconds
+            let lastStatusHash = null;
+            let consecutiveNoChange = 0;
+            
+            const poll = async () => {
+                if (!ralphSessionId) return;
+                
+                try {
+                    const response = await fetch(`/api/ralph/status?session_id=${encodeURIComponent(ralphSessionId)}`);
+                    const data = await response.json();
 
-        async function updateRalphStatus() {
-            if (!ralphSessionId) return;
-
-            try {
-                const response = await fetch(`/api/ralph/status?session_id=${encodeURIComponent(ralphSessionId)}`);
-                const data = await response.json();
-
-                if (data.success) {
-                    const status = data.status;
-                    updateRalphUI(status);
+                    if (data.success) {
+                        const status = data.status;
+                        
+                        // Check if status actually changed
+                        const statusKey = {
+                            phase: status.current_phase,
+                            is_running: status.is_running,
+                            is_paused: status.is_paused,
+                            task: status.current_task,
+                            progress: status.progress?.task_progress || 0
+                        };
+                        const statusHash = JSON.stringify(statusKey);
+                        
+                        if (statusHash !== lastStatusHash) {
+                            updateRalphUI(status);
+                            lastStatusHash = statusHash;
+                            consecutiveNoChange = 0;
+                            pollInterval = 2000; // Reset to fast polling
+                        } else {
+                            consecutiveNoChange++;
+                            // Slow down polling when no changes (up to 5 seconds)
+                            if (consecutiveNoChange > 5) {
+                                pollInterval = Math.min(5000, pollInterval * 1.2);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error updating status:', error);
+                    // On error, try to reconnect with SSE
+                    if (typeof EventSource !== 'undefined') {
+                        stopRalphStatusPolling();
+                        setTimeout(() => startRalphStatusPolling(), 1000);
+                    }
                 }
-            } catch (error) {
-                console.error('Error updating status:', error);
+            };
+            
+            // Initial poll
+            poll();
+            
+            // Set up interval with dynamic timing
+            const scheduleNext = () => {
+                ralphStatusInterval = setTimeout(() => {
+                    poll();
+                    scheduleNext();
+                }, pollInterval);
+            };
+            scheduleNext();
+        }
+        
+        function startRalphSSE() {
+            if (!ralphSessionId) return;
+            
+            const eventSource = new EventSource(
+                `/api/ralph/stream?session_id=${encodeURIComponent(ralphSessionId)}`
+            );
+            
+            ralphEventSource = eventSource;
+            
+            eventSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.type === 'status') {
+                        updateRalphUI(data.data);
+                    } else if (data.type === 'log') {
+                        // Add new log entry to UI
+                        const logEl = document.getElementById('statusLog');
+                        const entry = data.data;
+                        const className = entry.error ? 'error' : 
+                                        (entry.message.includes('complete') || entry.message.includes('success') ? 'success' : '');
+                        const logEntry = document.createElement('div');
+                        logEntry.className = `status-log-entry ${className}`;
+                        logEntry.innerHTML = `
+                            <strong>[${entry.phase}]</strong> ${entry.message}
+                            ${entry.timestamp ? `<br><small>${new Date(entry.timestamp).toLocaleTimeString()}</small>` : ''}
+                        `;
+                        logEl.appendChild(logEntry);
+                        // Keep only last 20 entries
+                        while (logEl.children.length > 20) {
+                            logEl.removeChild(logEl.firstChild);
+                        }
+                        // Scroll to bottom
+                        logEl.scrollTop = logEl.scrollHeight;
+                    } else if (data.type === 'error') {
+                        console.error('SSE error:', data.error);
+                    }
+                } catch (e) {
+                    console.error('Error parsing SSE data:', e);
+                }
+            };
+            
+            eventSource.onerror = function(event) {
+                console.warn('SSE connection error, falling back to polling');
+                eventSource.close();
+                ralphEventSource = null;
+                // Fallback to polling
+                startRalphStatusPolling();
+            };
+        }
+        
+        function stopRalphStatusPolling() {
+            if (ralphStatusInterval) {
+                clearTimeout(ralphStatusInterval);
+                ralphStatusInterval = null;
+            }
+            if (ralphEventSource) {
+                ralphEventSource.close();
+                ralphEventSource = null;
             }
         }
 
@@ -822,15 +1715,50 @@
                 phaseBadge.classList.add('active');
             }
 
-            // Mark completed phases
+            // Mark completed phases and update timeline
+            const phases = ['study', 'implement', 'test', 'update'];
+            let completedCount = 0;
+            let currentPhaseIndex = phases.indexOf(currentPhase);
+            
             status.phase_history.forEach(phase => {
                 if (phase.success) {
                     const badge = document.querySelector(`[data-phase="${phase.phase}"]`);
                     if (badge) {
                         badge.classList.add('complete');
+                        if (phases.includes(phase.phase)) {
+                            completedCount++;
+                        }
+                        
+                        // Update phase time
+                        if (phase.duration) {
+                            const timeEl = document.getElementById(`phaseTime-${phase.phase}`);
+                            if (timeEl) {
+                                timeEl.textContent = formatTime(phase.duration);
+                            }
+                        }
                     }
                 }
             });
+            
+            // Update timeline progress
+            let timelineProgress = 0;
+            if (currentPhaseIndex >= 0) {
+                // Calculate progress: completed phases + current phase progress
+                const phaseProgress = status.progress ? (status.progress.phase_progress || 0) : 0;
+                timelineProgress = (completedCount + phaseProgress) / phases.length * 100;
+            } else if (completedCount === phases.length) {
+                timelineProgress = 100;
+            }
+            
+            document.getElementById('timelineProgress').style.width = timelineProgress + '%';
+            
+            // Update current phase time if available
+            if (status.progress && status.progress.phase_elapsed) {
+                const currentTimeEl = document.getElementById(`phaseTime-${currentPhase}`);
+                if (currentTimeEl) {
+                    currentTimeEl.textContent = formatTime(status.progress.phase_elapsed);
+                }
+            }
 
             // Update current task
             const taskEl = document.getElementById('currentTask');
@@ -838,6 +1766,67 @@
                 taskEl.textContent = `Current Task: ${status.current_task}`;
             } else {
                 taskEl.textContent = status.is_running ? 'Processing...' : 'No active task';
+            }
+            
+            // Update progress indicators
+            if (status.progress) {
+                const progress = status.progress;
+                
+                // Task progress
+                const taskProgress = Math.round((progress.task_progress || 0) * 100);
+                document.getElementById('taskProgressPercent').textContent = taskProgress + '%';
+                document.getElementById('taskProgressBar').style.width = taskProgress + '%';
+                
+                if (progress.task_elapsed) {
+                    const elapsed = formatTime(progress.task_elapsed);
+                    document.getElementById('taskElapsedTime').textContent = `Elapsed: ${elapsed}`;
+                }
+                
+                if (progress.time_remaining) {
+                    const remaining = formatTime(progress.time_remaining);
+                    document.getElementById('taskTimeRemaining').textContent = `Remaining: ~${remaining}`;
+                    document.getElementById('taskTimeRemaining').style.display = 'block';
+                } else {
+                    document.getElementById('taskTimeRemaining').style.display = 'none';
+                }
+                
+                // Phase progress
+                const phaseProgress = Math.round((progress.phase_progress || 0) * 100);
+                document.getElementById('phaseProgressPercent').textContent = phaseProgress + '%';
+                document.getElementById('phaseProgressBar').style.width = phaseProgress + '%';
+                
+                if (progress.phase_elapsed) {
+                    const elapsed = formatTime(progress.phase_elapsed);
+                    document.getElementById('currentOperation').textContent = `${status.current_phase} phase (${elapsed})`;
+                } else {
+                    document.getElementById('currentOperation').textContent = `${status.current_phase} phase`;
+                }
+                
+                if (progress.time_remaining) {
+                    const remaining = formatTime(progress.time_remaining);
+                    document.getElementById('phaseTimeRemaining').textContent = `~${remaining} remaining`;
+                    document.getElementById('phaseTimeRemaining').style.display = 'block';
+                } else {
+                    document.getElementById('phaseTimeRemaining').style.display = 'none';
+                }
+                
+                // File creation progress
+                if (progress.files_expected && progress.files_expected > 0) {
+                    const fileProgress = Math.round((progress.files_created / progress.files_expected) * 100);
+                    document.getElementById('fileProgressText').textContent = `${progress.files_created}/${progress.files_expected}`;
+                    document.getElementById('fileProgressBar').style.width = fileProgress + '%';
+                    document.getElementById('fileProgressSection').style.display = 'block';
+                } else {
+                    document.getElementById('fileProgressSection').style.display = 'none';
+                }
+            }
+            
+            // Update current operation from latest log entry
+            if (status.status_log && status.status_log.length > 0) {
+                const latestEntry = status.status_log[status.status_log.length - 1];
+                if (latestEntry.message && !latestEntry.error) {
+                    document.getElementById('currentOperation').textContent = latestEntry.message;
+                }
             }
 
             // Update status log
@@ -884,11 +1873,15 @@
                     } else {
                         fileListEl.innerHTML = files.map(file => {
                             const statusClass = `file-status-${file.status}`;
+                            const isTextFile = isTextFileType(file.path);
+                            const clickable = isTextFile ? 'onclick="previewFile(\'' + escapeHtml(file.path) + '\')"' : '';
+                            const cursorStyle = isTextFile ? 'cursor: pointer;' : '';
                             return `
-                                <div class="file-item">
+                                <div class="file-item" ${clickable} style="${cursorStyle}">
                                     <span class="file-status-badge ${statusClass}">${file.status}</span>
-                                    <span>${file.path}</span>
+                                    <span>${escapeHtml(file.path)}</span>
                                     ${file.size ? `<span style="color: #666; margin-left: auto;">${formatFileSize(file.size)}</span>` : ''}
+                                    ${isTextFile ? '<span style="color: #667eea; margin-left: 8px;">👁️</span>' : ''}
                                 </div>
                             `;
                         }).join('');
@@ -960,10 +1953,7 @@
                 });
                 const data = await response.json();
                 if (data.success) {
-                    if (ralphStatusInterval) {
-                        clearInterval(ralphStatusInterval);
-                        ralphStatusInterval = null;
-                    }
+                    stopRalphStatusPolling();
                     document.getElementById('ralphControls').style.display = 'none';
                     document.getElementById('ralphStatusArea').innerHTML = `
                         <div class="success">Ralph loop stopped</div>

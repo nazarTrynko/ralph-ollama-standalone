@@ -5,8 +5,9 @@ Tracks file changes (created, modified, deleted) during loop execution.
 """
 
 import os
+import time
 from pathlib import Path
-from typing import Dict, List, Set, Optional
+from typing import Dict, List, Set, Optional, Any
 from datetime import datetime
 import json
 
@@ -25,36 +26,71 @@ class FileTracker:
         self.current_snapshot: Set[str] = set()
         self.tracked_files: Dict[str, Dict[str, any]] = {}
         
-    def take_snapshot(self) -> Dict[str, str]:
+        # Optimization: Cache snapshots and metadata
+        self._snapshot_cache: Optional[Dict[str, str]] = None
+        self._snapshot_cache_time: Optional[float] = 0.0
+        self._cache_ttl: float = 0.5  # Cache for 500ms
+        self._last_check_time: float = 0.0
+        self._check_interval: float = 0.2  # Minimum interval between checks (200ms)
+        
+    def take_snapshot(self, force_refresh: bool = False) -> Dict[str, str]:
         """Take a snapshot of current files in the project.
         
+        Args:
+            force_refresh: If True, bypass cache and take fresh snapshot
+            
         Returns:
             Dictionary mapping file paths to their modification times
         """
+        current_time = time.time()
+        
+        # Use cached snapshot if available and fresh
+        if not force_refresh and self._snapshot_cache is not None:
+            cache_age = current_time - self._snapshot_cache_time
+            if cache_age < self._cache_ttl:
+                return self._snapshot_cache.copy()
+        
         snapshot = {}
         
         if not self.project_path.exists():
+            self._snapshot_cache = snapshot
+            self._snapshot_cache_time = current_time
             return snapshot
         
+        # Batch file operations
+        exclude_dirs = {'.git', '__pycache__', 'venv', '.venv', 'node_modules', '.cursor', 'state'}
+        exclude_exts = {'.pyc', '.pyo', '.pyd', '.so', '.dylib'}
+        
+        # Collect all file paths first
+        file_paths = []
         for root, dirs, files in os.walk(self.project_path):
-            # Skip common directories that shouldn't be tracked
-            dirs[:] = [d for d in dirs if d not in {'.git', '__pycache__', 'venv', '.venv', 'node_modules', '.cursor', 'state'}]
+            # Modify dirs in-place to prune excluded directories
+            dirs[:] = [d for d in dirs if d not in exclude_dirs]
             
             for file in files:
                 file_path = Path(root) / file
                 try:
                     rel_path = str(file_path.relative_to(self.project_path))
-                    # Skip common files that shouldn't be tracked
-                    if any(rel_path.endswith(ext) for ext in {'.pyc', '.pyo', '.pyd', '.so', '.dylib'}):
+                    # Skip excluded files
+                    if any(rel_path.endswith(ext) for ext in exclude_exts):
                         continue
                     if rel_path.startswith('.git/'):
                         continue
-                    
-                    mtime = os.path.getmtime(file_path)
-                    snapshot[rel_path] = datetime.fromtimestamp(mtime).isoformat()
+                    file_paths.append((rel_path, file_path))
                 except (OSError, ValueError):
-                    # File might have been deleted or inaccessible
                     continue
+        
+        # Batch stat operations
+        for rel_path, file_path in file_paths:
+            try:
+                mtime = os.path.getmtime(file_path)
+                snapshot[rel_path] = datetime.fromtimestamp(mtime).isoformat()
+            except (OSError, ValueError):
+                continue
+        
+        # Update cache
+        self._snapshot_cache = snapshot
+        self._snapshot_cache_time = current_time
         
         return snapshot
     
@@ -69,29 +105,47 @@ class FileTracker:
         Returns:
             Dictionary with keys: 'created', 'modified', 'deleted'
         """
+        current_time = time.time()
+        
+        # Throttle checks to avoid excessive file system operations
+        if current_time - self._last_check_time < self._check_interval:
+            # Return cached changes if available
+            if hasattr(self, '_last_changes'):
+                return self._last_changes
+        
         current_snapshot = self.take_snapshot()
         current_files = set(current_snapshot.keys())
         
         created = current_files - self.initial_snapshot
         deleted = self.initial_snapshot - current_files
         
-        # For modified files, check if they existed before and have different mtime
+        # For modified files, use cached metadata to avoid redundant stat calls
         modified = set()
+        common_files = current_files & self.initial_snapshot
         
-        for file in current_files & self.initial_snapshot:
-            # File exists in both, check if modified
-            current_file = self.project_path / file
-            if current_file.exists():
-                try:
-                    current_mtime = os.path.getmtime(current_file)
-                    # If we have tracked info, compare
-                    if file in self.tracked_files:
-                        old_mtime = self.tracked_files[file].get('mtime')
-                        if old_mtime and current_mtime > old_mtime:
+        # Batch check modifications using cached metadata
+        for file in common_files:
+            # Use cached tracked info if available
+            if file in self.tracked_files:
+                tracked_info = self.tracked_files[file]
+                old_mtime = tracked_info.get('mtime')
+                
+                # Get current mtime from snapshot (already cached)
+                current_mtime_str = current_snapshot.get(file)
+                if current_mtime_str and old_mtime:
+                    try:
+                        current_mtime = datetime.fromisoformat(current_mtime_str).timestamp()
+                        if current_mtime > old_mtime:
                             modified.add(file)
-                    else:
-                        # First time tracking, check if mtime changed
-                        # Compare with initial snapshot if we have it
+                    except (ValueError, TypeError):
+                        pass
+            else:
+                # First time tracking - check if file was modified since initial snapshot
+                # This is less common, so we can do a direct check
+                current_file = self.project_path / file
+                if current_file.exists():
+                    try:
+                        current_mtime = os.path.getmtime(current_file)
                         initial_mtime_str = current_snapshot.get(file)
                         if initial_mtime_str:
                             try:
@@ -99,16 +153,21 @@ class FileTracker:
                                 if current_mtime > initial_mtime:
                                     modified.add(file)
                             except (ValueError, TypeError):
-                                # Can't compare, assume not modified
                                 pass
-                except OSError:
-                    pass
+                    except OSError:
+                        pass
         
-        return {
+        changes = {
             'created': sorted(list(created)),
             'modified': sorted(list(modified)),
             'deleted': sorted(list(deleted))
         }
+        
+        # Cache changes
+        self._last_changes = changes
+        self._last_check_time = current_time
+        
+        return changes
     
     def update_snapshot(self) -> Dict[str, List[str]]:
         """Update snapshot and return changes since last update.
@@ -118,41 +177,51 @@ class FileTracker:
         """
         changes = self.get_changes()
         
-        # Update tracked files info
-        current_snapshot = self.take_snapshot()
-        for file in changes['created'] + changes['modified']:
-            file_path = self.project_path / file
-            if file_path.exists():
-                try:
-                    mtime = os.path.getmtime(file_path)
-                    size = os.path.getsize(file_path)
-                    self.tracked_files[file] = {
-                        'mtime': mtime,
-                        'size': size,
-                        'path': str(file_path)
-                    }
-                except OSError:
-                    pass
+        # Batch update tracked files info
+        if changes['created'] or changes['modified']:
+            current_snapshot = self.take_snapshot()  # Use cached snapshot
+            
+            # Batch stat operations for changed files
+            files_to_update = changes['created'] + changes['modified']
+            for file in files_to_update:
+                file_path = self.project_path / file
+                if file_path.exists():
+                    try:
+                        # Single stat call for both mtime and size
+                        stat_info = file_path.stat()
+                        self.tracked_files[file] = {
+                            'mtime': stat_info.st_mtime,
+                            'size': stat_info.st_size,
+                            'path': str(file_path)
+                        }
+                    except OSError:
+                        pass
         
-        # Update current snapshot
+        # Update current snapshot (use cached snapshot if available)
+        if 'current_snapshot' not in locals():
+            current_snapshot = self.take_snapshot()
         self.current_snapshot = set(current_snapshot.keys())
+        
+        # Invalidate cache to force refresh on next call
+        self._snapshot_cache = None
         
         return changes
     
-    def get_all_files(self) -> List[Dict[str, any]]:
+    def get_all_files(self) -> List[Dict[str, Any]]:
         """Get all tracked files with their metadata.
         
         Returns:
             List of file dictionaries with path, status, size, mtime
         """
-        files = []
+        # Use cached snapshot and changes
         current_snapshot = self.take_snapshot()
         changes = self.get_changes()
         
         all_files = set(current_snapshot.keys()) | self.initial_snapshot
+        files = []
         
+        # Batch file info collection
         for file in sorted(all_files):
-            file_path = self.project_path / file
             status = 'unchanged'
             
             if file in changes['created']:
@@ -165,15 +234,25 @@ class FileTracker:
             file_info = {
                 'path': file,
                 'status': status,
-                'exists': file_path.exists()
+                'exists': file in current_snapshot
             }
             
-            if file_path.exists():
-                try:
-                    file_info['size'] = os.path.getsize(file_path)
-                    file_info['mtime'] = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
-                except OSError:
-                    pass
+            # Use cached tracked info if available
+            if file in self.tracked_files:
+                tracked_info = self.tracked_files[file]
+                file_info['size'] = tracked_info.get('size')
+                if tracked_info.get('mtime'):
+                    file_info['mtime'] = datetime.fromtimestamp(tracked_info['mtime']).isoformat()
+            elif file in current_snapshot:
+                # Fallback to direct stat if not in cache
+                file_path = self.project_path / file
+                if file_path.exists():
+                    try:
+                        stat_info = file_path.stat()
+                        file_info['size'] = stat_info.st_size
+                        file_info['mtime'] = datetime.fromtimestamp(stat_info.st_mtime).isoformat()
+                    except OSError:
+                        pass
             
             files.append(file_info)
         

@@ -11,7 +11,7 @@
 
 > Critical functionality, blocking work, or core features
 
-- [x] Create a README file
+- [x] create 100 ideas
 
 ---
 

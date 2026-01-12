@@ -126,6 +126,11 @@ python3 tests/test_ui_browser_e2e.py --url http://localhost:8080
 - Video recording (in headed mode)
 - Real browser interactions
 - Visual verification
+- Automatic cleanup of test projects after test run
+
+**Test Project Cleanup:**
+
+Browser e2e tests automatically create and clean up test projects in the `projects/` directory. Test projects are tracked and removed after tests complete. Test-generated projects are ignored by git (see `.gitignore` patterns: `projects/Test*`, `projects/*Test*`).
 
 ## Running All Tests
 

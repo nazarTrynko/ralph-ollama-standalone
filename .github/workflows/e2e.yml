@@ -84,7 +84,29 @@ jobs:
       - name: Run Browser E2E tests
         run: |
           mkdir -p test-reports/videos
-          python3 tests/test_ui_browser_e2e.py --no-start-server --url http://localhost:5001
+          # Start Flask server in background
+          python3 ui/app.py &
+          FLASK_PID=$!
+          sleep 5
+          # Verify server is running
+          for i in {1..30}; do
+            if curl -s http://localhost:5001/ > /dev/null 2>&1; then
+              echo "✅ Flask server is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "❌ Flask server did not start in time"
+              kill $FLASK_PID 2>/dev/null || true
+              exit 1
+            fi
+            echo "Attempt $i/30: Waiting for Flask server..."
+            sleep 1
+          done
+          # Run browser tests
+          python3 tests/test_ui_browser_e2e.py --no-start-server --url http://localhost:5001 || TEST_EXIT=$?
+          # Stop Flask server
+          kill $FLASK_PID 2>/dev/null || true
+          exit ${TEST_EXIT:-0}
         env:
           DISPLAY: :99
         continue-on-error: true

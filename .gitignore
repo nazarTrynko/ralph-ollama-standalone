@@ -30,3 +30,8 @@ __pycache__/
 venv/
 env/
 ENV/
+
+# Test-generated projects (from e2e tests)
+projects/Test*
+projects/*Test*
+test_projects/

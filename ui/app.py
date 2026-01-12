@@ -30,6 +30,7 @@ from lib.exceptions import (
 )
 from integration.ralph_ollama_adapter import RalphOllamaAdapter, call_llm
 from lib.ralph_loop_engine import RalphLoopEngine, LoopMode, Phase
+from lib.response_cache import get_cache
 
 app = Flask(__name__)
 CORS(app)
@@ -237,7 +238,17 @@ def list_models() -> Tuple[Response, int]:
                 'error': 'Ollama server is not running'
             }), 503
         
-        models = ollama_client.list_models()
+        # Check cache for model list
+        cache = get_cache()
+        cached_models = cache.get('model_list', 'all')
+        
+        if cached_models:
+            models = cached_models
+        else:
+            models = ollama_client.list_models()
+            # Cache model list (shorter TTL for model lists)
+            cache.set('model_list', 'all', models)
+        
         return jsonify({
             'models': models,
             'default': ollama_client.default_model
@@ -543,9 +554,139 @@ def ralph_files() -> Tuple[Response, int]:
         }), 500
 
 
+@app.route('/api/ralph/file/content', methods=['GET'])
+def ralph_file_content() -> Tuple[Response, int]:
+    """Get content of a specific file."""
+    try:
+        session_id = request.args.get('session_id')
+        file_path = request.args.get('file_path')
+        
+        if not session_id:
+            return jsonify({'error': 'session_id is required', 'success': False}), 400
+        if not file_path:
+            return jsonify({'error': 'file_path is required', 'success': False}), 400
+        
+        if session_id not in ralph_loops:
+            return jsonify({
+                'error': 'Loop not found',
+                'success': False
+            }), 404
+        
+        loop_engine = ralph_loops[session_id]
+        full_path = loop_engine.project_path / file_path
+        
+        # Security check: ensure file is within project directory
+        try:
+            full_path.resolve().relative_to(loop_engine.project_path.resolve())
+        except ValueError:
+            return jsonify({
+                'error': 'Invalid file path',
+                'success': False
+            }), 400
+        
+        if not full_path.exists():
+            return jsonify({
+                'error': 'File not found',
+                'success': False
+            }), 404
+        
+        if not full_path.is_file():
+            return jsonify({
+                'error': 'Path is not a file',
+                'success': False
+            }), 400
+        
+        # Read file content
+        try:
+            content = full_path.read_text(encoding='utf-8')
+        except UnicodeDecodeError:
+            # Try binary mode for non-text files
+            return jsonify({
+                'error': 'File is not a text file',
+                'success': False
+            }), 400
+        
+        return jsonify({
+            'success': True,
+            'content': content,
+            'path': file_path,
+            'size': full_path.stat().st_size
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': f'Failed to read file: {str(e)}',
+            'success': False
+        }), 500
+
+
+@app.route('/api/ralph/file/save', methods=['POST'])
+def ralph_file_save() -> Tuple[Response, int]:
+    """Save content to a file."""
+    try:
+        if not request.is_json:
+            return jsonify({'error': 'Request must be JSON', 'success': False}), 400
+        
+        data = request.json or {}
+        session_id = data.get('session_id')
+        file_path = data.get('file_path')
+        content = data.get('content')
+        
+        if not session_id:
+            return jsonify({'error': 'session_id is required', 'success': False}), 400
+        if not file_path:
+            return jsonify({'error': 'file_path is required', 'success': False}), 400
+        if content is None:
+            return jsonify({'error': 'content is required', 'success': False}), 400
+        
+        if session_id not in ralph_loops:
+            return jsonify({
+                'error': 'Loop not found',
+                'success': False
+            }), 404
+        
+        loop_engine = ralph_loops[session_id]
+        full_path = loop_engine.project_path / file_path
+        
+        # Security check: ensure file is within project directory
+        try:
+            full_path.resolve().relative_to(loop_engine.project_path.resolve())
+        except ValueError:
+            return jsonify({
+                'error': 'Invalid file path',
+                'success': False
+            }), 400
+        
+        # Create parent directories if needed
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write file content
+        full_path.write_text(content, encoding='utf-8')
+        
+        # Invalidate file list cache
+        cache = get_cache()
+        cache.invalidate('file_list', {'session_id': session_id})
+        
+        return jsonify({
+            'success': True,
+            'path': file_path,
+            'size': full_path.stat().st_size
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': f'Failed to save file: {str(e)}',
+            'success': False
+        }), 500
+
+
 @app.route('/api/ralph/stream', methods=['GET'])
 def ralph_stream() -> Response:
-    """Stream status updates using Server-Sent Events."""
+    """Stream status updates using Server-Sent Events with smart change detection."""
     session_id = request.args.get('session_id')
     if not session_id or session_id not in ralph_loops:
         return Response("session_id not found", status=404, mimetype='text/plain')
@@ -553,24 +694,74 @@ def ralph_stream() -> Response:
     loop_engine = ralph_loops[session_id]
     
     def generate():
+        last_status_hash = None
         last_log_count = 0
+        consecutive_no_change = 0
+        poll_interval = 0.5  # Start with 500ms
+        
         while True:
-            status = loop_engine.get_status()
-            current_log_count = len(status.get('status_log', []))
-            
-            # Send new log entries
-            if current_log_count > last_log_count:
-                new_entries = status['status_log'][last_log_count:]
-                for entry in new_entries:
-                    yield f"data: {json.dumps(entry)}\n\n"
-                last_log_count = current_log_count
-            
-            # Send periodic status update
-            yield f"data: {json.dumps({'type': 'status', 'data': status})}\n\n"
-            
-            time.sleep(1)  # Poll every second
+            try:
+                status = loop_engine.get_status()
+                
+                # Create a hash of key status fields to detect changes
+                status_key = {
+                    'phase': status.get('current_phase'),
+                    'is_running': status.get('is_running'),
+                    'is_paused': status.get('is_paused'),
+                    'task': status.get('current_task'),
+                    'progress': status.get('progress', {}).get('task_progress', 0),
+                    'files_created': status.get('progress', {}).get('files_created', 0)
+                }
+                status_hash = hash(json.dumps(status_key, sort_keys=True))
+                
+                # Check for new log entries
+                current_log_count = len(status.get('status_log', []))
+                has_new_logs = current_log_count > last_log_count
+                
+                # Check if status actually changed
+                status_changed = status_hash != last_status_hash
+                
+                if status_changed or has_new_logs:
+                    # Send new log entries
+                    if has_new_logs:
+                        new_entries = status['status_log'][last_log_count:]
+                        for entry in new_entries:
+                            yield f"data: {json.dumps({'type': 'log', 'data': entry})}\n\n"
+                        last_log_count = current_log_count
+                    
+                    # Send status update only if changed
+                    if status_changed:
+                        yield f"data: {json.dumps({'type': 'status', 'data': status})}\n\n"
+                        last_status_hash = status_hash
+                        consecutive_no_change = 0
+                        poll_interval = 0.5  # Reset to fast polling when active
+                    else:
+                        consecutive_no_change += 1
+                else:
+                    consecutive_no_change += 1
+                
+                # Adaptive polling: slow down when no changes
+                if consecutive_no_change > 10:
+                    poll_interval = min(2.0, poll_interval * 1.1)  # Gradually increase up to 2s
+                elif consecutive_no_change > 5:
+                    poll_interval = 1.0  # Medium speed
+                
+                # Send heartbeat every 10 seconds to keep connection alive
+                if consecutive_no_change % 20 == 0:
+                    yield f": heartbeat\n\n"
+                
+                time.sleep(poll_interval)
+                
+            except GeneratorExit:
+                break
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+                time.sleep(1)
     
-    return Response(generate(), mimetype='text/event-stream')
+    response = Response(generate(), mimetype='text/event-stream')
+    response.headers['Cache-Control'] = 'no-cache'
+    response.headers['X-Accel-Buffering'] = 'no'  # Disable buffering in nginx
+    return response
 
 
 def main():

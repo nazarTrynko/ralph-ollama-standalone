@@ -22,7 +22,9 @@ if str(project_root) not in sys.path:
 
 from integration.ralph_ollama_adapter import RalphOllamaAdapter, call_llm
 from lib.file_tracker import FileTracker
+from lib.response_cache import get_cache
 from lib.logging_config import get_logger
+from lib.code_validator import CodeValidator
 
 logger = get_logger('ralph_loop')
 
@@ -61,6 +63,7 @@ class RalphLoopEngine:
         self.project_path = Path(project_path).resolve()
         self.adapter = adapter or RalphOllamaAdapter()
         self.file_tracker = FileTracker(self.project_path)
+        self.code_validator = CodeValidator(self.project_path)
         
         self.mode = LoopMode.PHASE_BY_PHASE
         self.current_phase = Phase.IDLE
@@ -77,6 +80,19 @@ class RalphLoopEngine:
         self.thread: Optional[threading.Thread] = None
         
         self.status_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+        
+        # Error recovery settings
+        self.max_retries = 2
+        self.retry_delay = 2  # seconds
+        self.continue_on_non_critical = True
+        
+        # Progress tracking
+        self.phase_start_time: Optional[datetime] = None
+        self.task_start_time: Optional[datetime] = None
+        self.current_phase_progress: float = 0.0  # 0.0 to 1.0
+        self.files_expected: int = 0
+        self.files_created_count: int = 0
+        self.phase_durations: Dict[str, List[float]] = {}  # Track historical phase durations
     
     def set_status_callback(self, callback: Callable[[Dict[str, Any]], None]) -> None:
         """Set callback for status updates.
@@ -98,22 +114,144 @@ class RalphLoopEngine:
             except Exception as e:
                 logger.error(f"Error in status callback: {e}")
     
+    def _calculate_phase_progress(self, phase: Phase) -> float:
+        """Calculate progress within current phase.
+        
+        Args:
+            phase: Current phase
+            
+        Returns:
+            Progress value between 0.0 and 1.0
+        """
+        if phase == Phase.STUDY:
+            # Study phase: simple time-based estimate
+            if self.phase_start_time:
+                elapsed = (datetime.now() - self.phase_start_time).total_seconds()
+                avg_duration = self._get_average_phase_duration(phase.value)
+                if avg_duration > 0:
+                    return min(0.9, elapsed / avg_duration)  # Cap at 90% until complete
+            return 0.3
+        elif phase == Phase.IMPLEMENT:
+            # Implement phase: based on files created
+            if self.files_expected > 0:
+                return min(0.95, self.files_created_count / max(1, self.files_expected))
+            # Time-based fallback
+            if self.phase_start_time:
+                elapsed = (datetime.now() - self.phase_start_time).total_seconds()
+                avg_duration = self._get_average_phase_duration(phase.value)
+                if avg_duration > 0:
+                    return min(0.9, elapsed / avg_duration)
+            return 0.4
+        elif phase == Phase.TEST:
+            # Test phase: time-based
+            if self.phase_start_time:
+                elapsed = (datetime.now() - self.phase_start_time).total_seconds()
+                avg_duration = self._get_average_phase_duration(phase.value)
+                if avg_duration > 0:
+                    return min(0.9, elapsed / avg_duration)
+            return 0.5
+        elif phase == Phase.UPDATE:
+            # Update phase: quick, usually 80% done immediately
+            return 0.8
+        return 0.0
+    
+    def _get_average_phase_duration(self, phase_name: str) -> float:
+        """Get average duration for a phase based on history.
+        
+        Args:
+            phase_name: Name of the phase
+            
+        Returns:
+            Average duration in seconds, or 0 if no history
+        """
+        if phase_name not in self.phase_durations or not self.phase_durations[phase_name]:
+            # Default estimates (in seconds)
+            defaults = {
+                'study': 30.0,
+                'implement': 60.0,
+                'test': 20.0,
+                'update': 5.0
+            }
+            return defaults.get(phase_name, 30.0)
+        
+        durations = self.phase_durations[phase_name]
+        return sum(durations) / len(durations)
+    
+    def _estimate_time_remaining(self, phase: Phase) -> Optional[float]:
+        """Estimate time remaining for current phase.
+        
+        Args:
+            phase: Current phase
+            
+        Returns:
+            Estimated seconds remaining, or None if cannot estimate
+        """
+        if not self.phase_start_time:
+            return None
+        
+        elapsed = (datetime.now() - self.phase_start_time).total_seconds()
+        avg_duration = self._get_average_phase_duration(phase.value)
+        
+        if avg_duration <= 0:
+            return None
+        
+        remaining = max(0, avg_duration - elapsed)
+        return remaining
+    
+    def _calculate_task_progress(self) -> float:
+        """Calculate overall task progress.
+        
+        Returns:
+            Progress value between 0.0 and 1.0
+        """
+        phases = [Phase.STUDY, Phase.IMPLEMENT, Phase.TEST, Phase.UPDATE]
+        total_phases = len(phases)
+        
+        # Count completed phases
+        completed = 0
+        for phase in phases:
+            # Check if phase is in history and completed
+            for entry in self.phase_history:
+                if entry.get('phase') == phase.value and entry.get('success'):
+                    completed += 1
+                    break
+        
+        # Add current phase progress
+        if self.current_phase in phases:
+            phase_index = phases.index(self.current_phase)
+            if phase_index >= completed:
+                # Current phase is in progress
+                phase_progress = self._calculate_phase_progress(self.current_phase)
+                return (completed + phase_progress) / total_phases
+        
+        return completed / total_phases
+    
     def _log_status(self, message: str, phase: Optional[Phase] = None, **kwargs: Any) -> None:
-        """Log status message.
+        """Log status message with progress information.
         
         Args:
             message: Status message
             phase: Current phase (optional)
             **kwargs: Additional status data
         """
+        current_phase = phase or self.current_phase
+        phase_progress = self._calculate_phase_progress(current_phase)
+        task_progress = self._calculate_task_progress()
+        time_remaining = self._estimate_time_remaining(current_phase)
+        
         status_entry = {
             'timestamp': datetime.now().isoformat(),
             'message': message,
-            'phase': (phase or self.current_phase).value,
+            'phase': current_phase.value,
+            'phase_progress': round(phase_progress, 2),
+            'task_progress': round(task_progress, 2),
+            'time_remaining': round(time_remaining, 1) if time_remaining else None,
+            'files_created': self.files_created_count,
+            'files_expected': self.files_expected if self.files_expected > 0 else None,
             **kwargs
         }
         self.status_log.append(status_entry)
-        logger.info(f"[{status_entry['phase']}] {message}")
+        logger.info(f"[{status_entry['phase']}] {message} (Progress: {int(task_progress * 100)}%)")
         self._emit_status(status_entry)
     
     def initialize_project(
@@ -364,31 +502,121 @@ For multiple files, provide each file separately."""
             # Parse response to extract file paths and code
             files_created = self._parse_code_blocks(response)
             
-            # Write files to disk
+            # Set expected files count for progress tracking
+            self.files_expected = len(files_created)
+            self.files_created_count = 0
+            
+            if not files_created:
+                self._log_status("No code blocks found in response", Phase.IMPLEMENT)
+                return {
+                    'success': False,
+                    'error': 'No code blocks found in LLM response',
+                    'phase': Phase.IMPLEMENT.value
+                }
+            
+            # Validate files before writing
+            validation_results = self.code_validator.validate_and_execute(
+                files_created,
+                execute=False,  # Don't execute during implement phase
+                run_tests=False
+            )
+            
+            # Report validation errors and warnings
+            if validation_results['errors']:
+                for error in validation_results['errors']:
+                    self._log_status(f"Validation error: {error}", Phase.IMPLEMENT)
+                    logger.warning(f"Code validation error: {error}")
+            
+            if validation_results['warnings']:
+                for warning in validation_results['warnings']:
+                    self._log_status(f"Validation warning: {warning}", Phase.IMPLEMENT)
+                    logger.info(f"Code validation warning: {warning}")
+            
+            # Write files to disk (even if validation found issues, but log them)
             written_files = []
-            for file_info in files_created:
+            execution_results = []
+            
+            for i, file_info in enumerate(files_created):
                 file_path = self.project_path / file_info['path']
+                
+                # Get validation result for this file
+                validation = None
+                if i < len(validation_results['validated']):
+                    validation = validation_results['validated'][i]
+                
                 try:
                     # Create parent directories if needed
                     file_path.parent.mkdir(parents=True, exist_ok=True)
-                    # Write file content
-                    file_path.write_text(file_info['content'])
-                    written_files.append(str(file_path.relative_to(self.project_path)))
-                    self._log_status(f"Created file: {file_info['path']}", Phase.IMPLEMENT)
+                    
+                    # Only write if validation passed (or if warnings only, or no validation available)
+                    should_write = True
+                    if validation:
+                        should_write = validation['valid'] or (not validation['errors'] and validation['warnings'])
+                    
+                    if should_write:
+                        # Write file content
+                        file_path.write_text(file_info['content'])
+                        written_files.append(str(file_path.relative_to(self.project_path)))
+                        self.files_created_count += 1
+                        self._log_status(
+                            f"Created file: {file_info['path']} ({self.files_created_count}/{self.files_expected})",
+                            Phase.IMPLEMENT
+                        )
+                        
+                        # If it's a Python file and validation passed, try to execute it
+                        if file_path.suffix == '.py':
+                            if not validation or validation['valid']:
+                                exec_result = self.code_validator.execute_python_file(file_path)
+                                execution_results.append({
+                                    'file': file_info['path'],
+                                    'success': exec_result['success'],
+                                    'error': exec_result.get('error'),
+                                    'stdout': exec_result.get('stdout', '')[:500],  # Limit output
+                                    'stderr': exec_result.get('stderr', '')[:500]
+                                })
+                                
+                                if exec_result['success']:
+                                    self._log_status(f"Executed {file_info['path']} successfully", Phase.IMPLEMENT)
+                                else:
+                                    self._log_status(f"Execution warning for {file_info['path']}: {exec_result.get('error', 'Unknown error')}", Phase.IMPLEMENT)
+                    else:
+                        # Skip writing invalid files
+                        error_msg = ', '.join(validation['errors']) if validation and validation['errors'] else 'Validation failed'
+                        self._log_status(f"Skipped invalid file: {file_info['path']} - {error_msg}", Phase.IMPLEMENT)
+                        logger.warning(f"Skipping invalid file {file_info['path']}: {error_msg}")
+                        
                 except Exception as e:
                     logger.error(f"Error writing file {file_info['path']}: {e}")
                     self._log_status(f"Error writing file {file_info['path']}: {e}", Phase.IMPLEMENT)
             
+            # Check if any test files were created
+            test_files = [f for f in written_files if 'test' in Path(f).name.lower()]
+            
+            # Run tests if test files were created
+            test_results = None
+            if test_files:
+                self._log_status(f"Test files detected, running tests...", Phase.IMPLEMENT)
+                test_results = self.code_validator.run_tests()
+                if test_results['success']:
+                    self._log_status(f"Tests passed: {test_results.get('tests_passed', 0)}", Phase.IMPLEMENT)
+                else:
+                    self._log_status(f"Tests failed or had issues: {test_results.get('error', 'Unknown')}", Phase.IMPLEMENT)
+            
             self._log_status(
                 f"Implementation complete: {len(written_files)} files written",
                 Phase.IMPLEMENT,
-                files_created=len(written_files)
+                files_created=len(written_files),
+                execution_results=execution_results,
+                test_results=test_results
             )
             
             return {
                 'success': True,
                 'output': response,
                 'files_created': written_files,
+                'validation_results': validation_results,
+                'execution_results': execution_results,
+                'test_results': test_results,
                 'phase': Phase.IMPLEMENT.value
             }
         except Exception as e:
@@ -407,6 +635,9 @@ For multiple files, provide each file separately."""
         - ```python\ncode``` (language tag)
         - ```path with spaces/file.py\ncode``` (paths with spaces)
         - ```file: path/to/file.py\ncode``` (explicit file marker)
+        - ```path: path/to/file.py\ncode``` (path marker)
+        - ```create: path/to/file.py\ncode``` (create marker)
+        - Inline code blocks (single backticks) are ignored
         
         Args:
             response: LLM response text
@@ -422,10 +653,11 @@ For multiple files, provide each file separately."""
             'src/main.py'
         """
         files = []
-        # Improved pattern: handles paths with spaces, language tags, and empty specifiers
+        # Pattern for code blocks (triple backticks only, not inline)
         # Group 1: optional specifier (path, language, or empty)
         # Group 2: code content
-        pattern = r'```([^\n]*)\n(.*?)```'
+        # Use negative lookbehind/lookahead to avoid matching inline code
+        pattern = r'```([^\n`]*)\n(.*?)```'
         
         matches = re.finditer(pattern, response, re.DOTALL)
         for match in matches:
@@ -469,20 +701,44 @@ For multiple files, provide each file separately."""
         if specifier:
             specifier_lower = specifier.lower().strip()
             
-            # Check for explicit file markers
-            if specifier_lower.startswith('file:'):
-                # Extract path after "file:"
-                path = specifier[5:].strip()
-                if path:
-                    return path
+            # Check for explicit file markers (file:, path:, create:, save:, write:)
+            marker_patterns = [
+                (r'^file:\s*(.+)', 'file:'),
+                (r'^path:\s*(.+)', 'path:'),
+                (r'^create:\s*(.+)', 'create:'),
+                (r'^save:\s*(.+)', 'save:'),
+                (r'^write:\s*(.+)', 'write:'),
+            ]
+            
+            for pattern, marker in marker_patterns:
+                match = re.match(pattern, specifier, re.IGNORECASE)
+                if match:
+                    path = match.group(1).strip()
+                    # Remove quotes if present
+                    path = path.strip('"\'`')
+                    if path:
+                        return path
             
             # Check if it looks like a file path
             # Path indicators: contains /, \, or has file extension pattern
             has_path_separator = '/' in specifier or '\\' in specifier
             has_extension = '.' in specifier and len(specifier.split('.')[-1]) <= 5  # reasonable extension length
             
+            # Handle special characters in paths (URL-encoded, escaped, etc.)
+            # Decode common special characters
+            decoded_specifier = specifier
+            # Handle URL-encoded spaces and special chars
+            try:
+                import urllib.parse
+                decoded_specifier = urllib.parse.unquote(specifier)
+            except Exception:
+                pass
+            
             # If it has path indicators and is not a known language tag
             if (has_path_separator or has_extension) and specifier_lower not in language_tags:
+                # Return decoded version if it's different and valid
+                if decoded_specifier != specifier and (has_path_separator or has_extension):
+                    return decoded_specifier
                 return specifier
             
             # If it's a known language tag, don't use it as path
@@ -493,7 +749,9 @@ For multiple files, provide each file separately."""
         # Look for patterns like "file: path", "path: path", "create: path"
         path_patterns = [
             r'(?:file|path|create|save|write)[:\s]+([^\s\n]+(?:\s+[^\s\n]+)*)',  # Handles paths with spaces
-            r'#\s*(?:file|path)[:\s]+([^\n]+)',  # Comment-based path hints
+            r'#\s*(?:file|path|create)[:\s]+([^\n]+)',  # Comment-based path hints
+            r'@file\s+([^\s\n]+)',  # @file annotation
+            r'<!--\s*file:\s*([^\s]+)\s*-->',  # HTML comment
         ]
         
         for pattern in path_patterns:
@@ -502,12 +760,65 @@ For multiple files, provide each file separately."""
                 extracted_path = path_match.group(1).strip()
                 # Clean up common prefixes/suffixes
                 extracted_path = re.sub(r'^(?:file|path|create|save|write)[:\s]+', '', extracted_path, flags=re.IGNORECASE)
-                extracted_path = extracted_path.strip('"\'`')
+                extracted_path = extracted_path.strip('"\'`<>')
                 if extracted_path:
                     return extracted_path
         
-        # Default: generate a name based on index
-        return f"generated_{file_index}.py"
+        # Try to infer file extension from content (language detection)
+        inferred_ext = self._infer_file_extension(content)
+        
+        # Default: generate a name based on index with inferred extension
+        return f"generated_{file_index}{inferred_ext}"
+    
+    def _infer_file_extension(self, content: str) -> str:
+        """Infer file extension from code content.
+        
+        Args:
+            content: Code content
+            
+        Returns:
+            File extension (e.g., '.py', '.js', etc.)
+        """
+        content_lower = content.lower().strip()
+        
+        # Python indicators
+        if any(keyword in content_lower for keyword in ['def ', 'import ', 'from ', 'class ', 'if __name__']):
+            return '.py'
+        
+        # JavaScript/TypeScript indicators
+        if any(keyword in content_lower for keyword in ['function ', 'const ', 'let ', 'var ', 'export ', 'import ']):
+            if 'typescript' in content_lower or 'interface ' in content_lower or ': ' in content[:100]:
+                return '.ts'
+            return '.js'
+        
+        # HTML indicators
+        if content_lower.strip().startswith('<!doctype') or '<html' in content_lower or '<div' in content_lower:
+            return '.html'
+        
+        # CSS indicators
+        if '{' in content and ':' in content and ('color:' in content_lower or 'margin:' in content_lower):
+            return '.css'
+        
+        # JSON indicators
+        if (content.strip().startswith('{') and content.strip().endswith('}')) or \
+           (content.strip().startswith('[') and content.strip().endswith(']')):
+            try:
+                import json
+                json.loads(content)
+                return '.json'
+            except Exception:
+                pass
+        
+        # Markdown indicators
+        if any(marker in content_lower for marker in ['# ', '## ', '```', '**', '* ']):
+            return '.md'
+        
+        # Shell script indicators
+        if content_lower.startswith('#!/bin/') or content_lower.startswith('#!/usr/bin/'):
+            return '.sh'
+        
+        # Default to .py if no match
+        return '.py'
     
     def _phase_test(self, task: str) -> Dict[str, Any]:
         """Execute Test phase.
@@ -588,13 +899,47 @@ Provide test cases and validation steps. If tests exist, suggest running them. I
             'phase': Phase.UPDATE.value
         }
     
-    def _execute_phase(self, phase: Phase, task: str, previous_output: Optional[str] = None) -> Dict[str, Any]:
-        """Execute a single phase.
+    def _is_critical_error(self, error: str, phase: Phase) -> bool:
+        """Determine if an error is critical (should stop execution).
+        
+        Args:
+            error: Error message
+            phase: Current phase
+            
+        Returns:
+            True if error is critical
+        """
+        # Critical errors that should stop execution
+        critical_patterns = [
+            'permission denied',
+            'disk full',
+            'out of memory',
+            'connection refused',
+            'timeout',
+            'authentication failed',
+            'invalid api key'
+        ]
+        
+        error_lower = error.lower()
+        for pattern in critical_patterns:
+            if pattern in error_lower:
+                return True
+        
+        # UPDATE phase errors are usually non-critical (just marking tasks)
+        if phase == Phase.UPDATE:
+            return False
+        
+        # Other errors are generally non-critical (can retry or continue)
+        return False
+    
+    def _execute_phase(self, phase: Phase, task: str, previous_output: Optional[str] = None, retry_count: int = 0) -> Dict[str, Any]:
+        """Execute a single phase with retry logic.
         
         Args:
             phase: Phase to execute
             task: Current task
             previous_output: Output from previous phase (optional)
+            retry_count: Current retry attempt (0 = first attempt)
             
         Returns:
             Phase result dictionary
@@ -602,15 +947,25 @@ Provide test cases and validation steps. If tests exist, suggest running them. I
         with self.lock:
             self.current_phase = phase
         
+        # Track phase start time for progress calculation
+        phase_start = datetime.now()
+        self.phase_start_time = phase_start
+        
         phase_entry = {
             'phase': phase.value,
             'task': task,
-            'started_at': datetime.now().isoformat(),
+            'started_at': phase_start.isoformat(),
             'completed_at': None,
             'success': False,
             'output': None,
-            'error': None
+            'error': None,
+            'retry_count': retry_count
         }
+        
+        # Reset phase-specific progress
+        self.current_phase_progress = 0.0
+        self.files_created_count = 0
+        self.files_expected = 0
         
         try:
             if phase == Phase.STUDY:
@@ -624,24 +979,90 @@ Provide test cases and validation steps. If tests exist, suggest running them. I
             else:
                 result = {'success': False, 'error': f'Unknown phase: {phase}'}
             
-            phase_entry['completed_at'] = datetime.now().isoformat()
+            phase_end = datetime.now()
+            phase_duration = (phase_end - phase_start).total_seconds()
+            
+            # Track phase duration for future estimates
+            if phase.value not in self.phase_durations:
+                self.phase_durations[phase.value] = []
+            self.phase_durations[phase.value].append(phase_duration)
+            # Keep only last 10 durations
+            if len(self.phase_durations[phase.value]) > 10:
+                self.phase_durations[phase.value] = self.phase_durations[phase.value][-10:]
+            
+            phase_entry['completed_at'] = phase_end.isoformat()
+            phase_entry['duration'] = round(phase_duration, 2)
             phase_entry['success'] = result.get('success', False)
             phase_entry['output'] = result.get('output')
             phase_entry['error'] = result.get('error')
+            
+            # Update progress to 100% for completed phase
+            self.current_phase_progress = 1.0
+            
+            # If phase failed, check if we should retry
+            if not result.get('success', False) and retry_count < self.max_retries:
+                error = result.get('error', 'Unknown error')
+                
+                # Check if error is critical
+                if self._is_critical_error(error, phase):
+                    self._log_status(f"Critical error in {phase.value} phase: {error}. Stopping.", phase)
+                    phase_entry['error'] = f"Critical: {error}"
+                    self.phase_history.append(phase_entry)
+                    return result
+                
+                # Non-critical error - retry
+                self._log_status(
+                    f"Phase {phase.value} failed (attempt {retry_count + 1}/{self.max_retries + 1}): {error}. Retrying...",
+                    phase
+                )
+                time.sleep(self.retry_delay)
+                return self._execute_phase(phase, task, previous_output, retry_count + 1)
+            
+            # If still failed after retries, check if we should continue
+            if not result.get('success', False) and self.continue_on_non_critical:
+                error = result.get('error', 'Unknown error')
+                if not self._is_critical_error(error, phase):
+                    self._log_status(
+                        f"Phase {phase.value} failed after {retry_count + 1} attempts: {error}. Continuing anyway.",
+                        phase
+                    )
+                    # Mark as success with warning
+                    result['success'] = True
+                    result['warning'] = f"Phase completed with errors: {error}"
             
             self.phase_history.append(phase_entry)
             
             return result
             
         except Exception as e:
+            error_msg = str(e)
             logger.error(f"Error executing phase {phase.value}: {e}")
+            
+            # Check if we should retry
+            if retry_count < self.max_retries and not self._is_critical_error(error_msg, phase):
+                self._log_status(
+                    f"Exception in {phase.value} phase (attempt {retry_count + 1}/{self.max_retries + 1}): {error_msg}. Retrying...",
+                    phase
+                )
+                time.sleep(self.retry_delay)
+                return self._execute_phase(phase, task, previous_output, retry_count + 1)
+            
             phase_entry['completed_at'] = datetime.now().isoformat()
-            phase_entry['error'] = str(e)
+            phase_entry['error'] = error_msg
+            phase_entry['success'] = False
+            
+            # If non-critical and continue_on_non_critical is True, mark as success with warning
+            if self.continue_on_non_critical and not self._is_critical_error(error_msg, phase):
+                phase_entry['success'] = True
+                phase_entry['warning'] = f"Phase completed with exception: {error_msg}"
+                self._log_status(f"Phase {phase.value} had exception but continuing: {error_msg}", phase)
+            
             self.phase_history.append(phase_entry)
             
             return {
-                'success': False,
-                'error': str(e),
+                'success': phase_entry['success'],
+                'error': error_msg,
+                'warning': phase_entry.get('warning'),
                 'phase': phase.value
             }
     
@@ -669,6 +1090,7 @@ Provide test cases and validation steps. If tests exist, suggest running them. I
                     break
                 
                 self.current_task = tasks[0]
+                self.task_start_time = datetime.now()
                 self._log_status(f"Starting task: {self.current_task}", Phase.IDLE)
                 
                 # Execute phases
@@ -689,8 +1111,26 @@ Provide test cases and validation steps. If tests exist, suggest running them. I
                     result = self._execute_phase(phase, self.current_task, previous_output)
                     
                     if not result.get('success'):
-                        self._log_status(f"Phase {phase.value} failed: {result.get('error')}", Phase.ERROR)
-                        # Continue to next phase anyway
+                        error_msg = result.get('error', 'Unknown error')
+                        warning = result.get('warning')
+                        
+                        if warning:
+                            self._log_status(f"Phase {phase.value} completed with warning: {warning}", phase)
+                        else:
+                            self._log_status(f"Phase {phase.value} failed: {error_msg}", Phase.ERROR)
+                            
+                            # Check if error is critical
+                            if self._is_critical_error(error_msg, phase):
+                                self._log_status("Critical error detected. Stopping loop.", Phase.ERROR)
+                                with self.lock:
+                                    self.current_phase = Phase.ERROR
+                                    self.is_running = False
+                                break
+                        
+                        # Continue to next phase if non-critical or continue_on_non_critical is True
+                        if not self.continue_on_non_critical and not warning:
+                            self._log_status("Non-critical error but continue_on_non_critical is False. Stopping.", Phase.ERROR)
+                            break
                     
                     previous_output = result.get('output')
                     
@@ -701,6 +1141,8 @@ Provide test cases and validation steps. If tests exist, suggest running them. I
                             f"Files changed: {len(changes['created'])} created, {len(changes['modified'])} modified",
                             phase
                         )
+                        # Invalidate file list cache (will be invalidated by session_id in UI)
+                        # Cache invalidation happens at UI level when files change
                     
                     # Pause after phase if in phase-by-phase mode
                     if self.mode == LoopMode.PHASE_BY_PHASE:
@@ -790,12 +1232,26 @@ Provide test cases and validation steps. If tests exist, suggest running them. I
         self._log_status(f"Mode changed: {old_mode.value} → {mode.value}", self.current_phase)
     
     def get_status(self) -> Dict[str, Any]:
-        """Get current status.
+        """Get current status with progress information.
         
         Returns:
             Status dictionary
         """
         with self.lock:
+            phase_progress = self._calculate_phase_progress(self.current_phase)
+            task_progress = self._calculate_task_progress()
+            time_remaining = self._estimate_time_remaining(self.current_phase)
+            
+            # Calculate task elapsed time
+            task_elapsed = None
+            if self.task_start_time:
+                task_elapsed = (datetime.now() - self.task_start_time).total_seconds()
+            
+            # Calculate phase elapsed time
+            phase_elapsed = None
+            if self.phase_start_time:
+                phase_elapsed = (datetime.now() - self.phase_start_time).total_seconds()
+            
             return {
                 'is_running': self.is_running,
                 'is_paused': self.is_paused,
@@ -804,5 +1260,14 @@ Provide test cases and validation steps. If tests exist, suggest running them. I
                 'current_task': self.current_task,
                 'phase_history': self.phase_history[-10:],  # Last 10 phases
                 'status_log': self.status_log[-20:],  # Last 20 log entries
-                'files': self.file_tracker.get_all_files()
+                'files': self.file_tracker.get_all_files(),
+                'progress': {
+                    'phase_progress': round(phase_progress, 2),
+                    'task_progress': round(task_progress, 2),
+                    'time_remaining': round(time_remaining, 1) if time_remaining else None,
+                    'phase_elapsed': round(phase_elapsed, 1) if phase_elapsed else None,
+                    'task_elapsed': round(task_elapsed, 1) if task_elapsed else None,
+                    'files_created': self.files_created_count,
+                    'files_expected': self.files_expected if self.files_expected > 0 else None,
+                }
             }
