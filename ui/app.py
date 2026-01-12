@@ -10,6 +10,7 @@ import json
 import time
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
+from datetime import datetime
 from flask import Flask, render_template, request, jsonify, Response
 from flask_cors import CORS
 
@@ -292,15 +293,26 @@ def ralph_start() -> Tuple[Response, int]:
         mode_str = data.get('mode', 'phase_by_phase')
         project_path = data.get('project_path', None)
         
-        if not project_name:
-            return jsonify({'error': 'Project name is required', 'success': False}), 400
-        if not description:
-            return jsonify({'error': 'Description is required', 'success': False}), 400
-        
         # Determine project path
+        is_existing_project = False
         if project_path:
             project_dir = Path(project_path)
+            # Check if project exists
+            if project_dir.exists() and (project_dir / '@fix_plan.md').exists():
+                # Loading existing project - skip initialization
+                is_existing_project = True
+            else:
+                return jsonify({
+                    'error': f'Project not found at {project_path}',
+                    'success': False
+                }), 404
         else:
+            # Creating new project
+            if not project_name:
+                return jsonify({'error': 'Project name is required', 'success': False}), 400
+            if not description:
+                return jsonify({'error': 'Description is required', 'success': False}), 400
+            
             # Create in a projects directory
             projects_dir = project_root / 'projects'
             projects_dir.mkdir(exist_ok=True)
@@ -325,12 +337,13 @@ def ralph_start() -> Tuple[Response, int]:
         loop_engine = RalphLoopEngine(project_dir, adapter)
         ralph_loops[session_id] = loop_engine
         
-        # Initialize project
-        loop_engine.initialize_project(
-            project_name=project_name,
-            description=description,
-            initial_task=initial_task if initial_task else None
-        )
+        # Initialize project only if it's new
+        if not is_existing_project:
+            loop_engine.initialize_project(
+                project_name=project_name,
+                description=description,
+                initial_task=initial_task if initial_task else None
+            )
         
         # Determine mode
         mode = LoopMode.PHASE_BY_PHASE if mode_str == 'phase_by_phase' else LoopMode.NON_STOP
@@ -351,6 +364,88 @@ def ralph_start() -> Tuple[Response, int]:
         return jsonify({
             'error': f'Failed to start loop: {str(e)}',
             'success': False
+        }), 500
+
+
+@app.route('/api/ralph/projects', methods=['GET'])
+def list_projects() -> Tuple[Response, int]:
+    """List all existing projects."""
+    try:
+        projects_dir = project_root / 'projects'
+        projects = []
+        
+        if projects_dir.exists():
+            for project_dir in sorted(projects_dir.iterdir()):
+                if not project_dir.is_dir():
+                    continue
+                
+                # Skip test projects
+                project_name = project_dir.name
+                if project_name.startswith('Test') or 'Test' in project_name:
+                    continue
+                
+                # Read project metadata
+                readme_path = project_dir / 'README.md'
+                fix_plan_path = project_dir / '@fix_plan.md'
+                
+                name = project_name
+                description = ''
+                has_fix_plan = fix_plan_path.exists()
+                last_modified = None
+                
+                if readme_path.exists():
+                    try:
+                        content = readme_path.read_text()
+                        lines = content.split('\n')
+                        # Extract name from first line (header)
+                        for line in lines:
+                            if line.startswith('# '):
+                                name = line[2:].strip()
+                                break
+                        # Extract description (first paragraph after title)
+                        desc_lines = []
+                        in_desc = False
+                        for line in lines:
+                            if line.startswith('# '):
+                                in_desc = True
+                                continue
+                            if in_desc and line.strip() and not line.startswith('#'):
+                                desc_lines.append(line.strip())
+                            elif in_desc and line.startswith('#'):
+                                break
+                        if desc_lines:
+                            description = ' '.join(desc_lines[:2])  # First 2 lines
+                    except Exception as e:
+                        print(f"Error reading README for {project_dir}: {e}")
+                
+                # Get last modified time
+                if fix_plan_path.exists():
+                    last_modified = datetime.fromtimestamp(fix_plan_path.stat().st_mtime).isoformat()
+                elif readme_path.exists():
+                    last_modified = datetime.fromtimestamp(readme_path.stat().st_mtime).isoformat()
+                else:
+                    last_modified = datetime.fromtimestamp(project_dir.stat().st_mtime).isoformat()
+                
+                projects.append({
+                    'name': name,
+                    'path': str(project_dir),
+                    'description': description,
+                    'last_modified': last_modified,
+                    'has_fix_plan': has_fix_plan
+                })
+        
+        return jsonify({
+            'success': True,
+            'projects': projects
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': f'Failed to list projects: {str(e)}',
+            'success': False,
+            'projects': []
         }), 500
 
 

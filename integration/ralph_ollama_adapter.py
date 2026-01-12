@@ -246,8 +246,23 @@ def call_llm(
     Returns:
         Generated response text
     """
-    # Try Ollama first
+    # Try Ollama first via factory function (checks env var)
     adapter = create_ralph_llm_provider()
+    
+    # If factory didn't create adapter, try direct creation if config file exists
+    if not adapter:
+        config_path = get_config_path()
+        if config_path.exists():
+            try:
+                adapter = RalphOllamaAdapter(str(config_path))
+                if adapter.check_available():
+                    logger.info("Using Ollama adapter from config file (env var not set)")
+                else:
+                    adapter = None
+            except Exception as e:
+                logger.debug(f"Could not create adapter from config file: {e}")
+                adapter = None
+    
     if adapter:
         result = adapter.generate(
             prompt=prompt,

@@ -869,6 +869,13 @@
 
             <div class="tab-content" id="ralphTab">
                 <div class="main-content">
+                    <div class="panel" id="existingProjectsPanel" style="display: none;">
+                        <h2>📁 Existing Projects</h2>
+                        <div id="projectsList">
+                            <p style="color: #999; text-align: center; padding: 20px;">Loading projects...</p>
+                        </div>
+                    </div>
+
                     <div class="panel">
                         <h2>🚀 Start New Project</h2>
                         <form id="ralphStartForm">
@@ -1488,6 +1495,118 @@
         checkStatus();
         setInterval(checkStatus, 5000);
 
+        // Load existing projects on page load
+        async function loadProjects() {
+            try {
+                const response = await fetch('/api/ralph/projects');
+                const data = await response.json();
+                
+                if (data.success && data.projects && data.projects.length > 0) {
+                    const projectsListEl = document.getElementById('projectsList');
+                    const panelEl = document.getElementById('existingProjectsPanel');
+                    
+                    if (projectsListEl && panelEl) {
+                        projectsListEl.innerHTML = data.projects.map(project => {
+                            const date = project.last_modified ? new Date(project.last_modified).toLocaleDateString() : 'Unknown';
+                            return `
+                                <div style="padding: 15px; margin-bottom: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e0e0e0;">
+                                    <h3 style="margin: 0 0 8px 0; color: #333;">${escapeHtml(project.name)}</h3>
+                                    ${project.description ? `<p style="margin: 0 0 10px 0; color: #666; font-size: 14px;">${escapeHtml(project.description)}</p>` : ''}
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <span style="color: #999; font-size: 12px;">Last modified: ${date}</span>
+                                        <button class="btn" onclick="continueProject('${escapeHtml(project.path)}', '${escapeHtml(project.name)}')" style="padding: 8px 16px; font-size: 14px;">
+                                            Continue
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('');
+                        panelEl.style.display = 'block';
+                    }
+                } else {
+                    const panelEl = document.getElementById('existingProjectsPanel');
+                    if (panelEl) {
+                        panelEl.style.display = 'none';
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading projects:', error);
+                const panelEl = document.getElementById('existingProjectsPanel');
+                if (panelEl) {
+                    panelEl.style.display = 'none';
+                }
+            }
+        }
+
+        async function continueProject(projectPath, projectName) {
+            const startBtn = document.getElementById('startRalphBtn');
+            if (startBtn) {
+                startBtn.disabled = true;
+                startBtn.innerHTML = '<span class="loading"></span> Loading...';
+            }
+
+            try {
+                const response = await fetch('/api/ralph/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        project_path: projectPath,
+                        project_name: projectName,
+                        description: '', // Not needed for existing projects
+                        mode: 'phase_by_phase'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    ralphSessionId = data.session_id;
+                    document.getElementById('ralphControls').style.display = 'flex';
+                    document.getElementById('ralphStatusArea').innerHTML = `
+                        <div class="success">
+                            <strong>Project Loaded!</strong><br>
+                            Project Path: ${escapeHtml(data.project_path)}<br>
+                            Mode: ${escapeHtml(data.mode)}
+                        </div>
+                    `;
+                    
+                    // Start status polling
+                    startRalphStatusPolling();
+                } else {
+                    document.getElementById('ralphStatusArea').innerHTML = `
+                        <div class="error">
+                            <strong>Error Loading Project</strong><br>
+                            ${escapeHtml(data.error || 'Unknown error')}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error continuing project:', error);
+                document.getElementById('ralphStatusArea').innerHTML = `
+                    <div class="error">
+                        <strong>Error</strong><br>
+                        ${escapeHtml(error.message)}
+                    </div>
+                `;
+            } finally {
+                if (startBtn) {
+                    startBtn.disabled = false;
+                    startBtn.innerHTML = 'Start Ralph Loop';
+                }
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Load projects on page load
+        loadProjects();
+
         // Ralph Loop Functions
         document.getElementById('ralphStartForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -1684,10 +1803,33 @@
             };
             
             eventSource.onerror = function(event) {
-                console.warn('SSE connection error, falling back to polling');
+                console.warn('SSE connection error');
                 eventSource.close();
                 ralphEventSource = null;
-                // Fallback to polling
+                
+                // Check if EventSource closed without receiving any messages (likely 404)
+                if (eventSource.readyState === EventSource.CLOSED) {
+                    console.warn('SSE connection closed - session may not exist');
+                    // Clear session and show message
+                    ralphSessionId = null;
+                    const statusArea = document.getElementById('ralphStatusArea');
+                    if (statusArea) {
+                        statusArea.innerHTML = `
+                            <div class="error">
+                                <strong>Session Expired</strong><br>
+                                The previous session is no longer available. Please start a new project or continue an existing one.
+                            </div>
+                        `;
+                    }
+                    // Hide controls
+                    const controls = document.getElementById('ralphControls');
+                    if (controls) {
+                        controls.style.display = 'none';
+                    }
+                    return; // Don't retry
+                }
+                
+                // For other errors, try polling as fallback
                 startRalphStatusPolling();
             };
         }

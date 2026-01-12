@@ -93,6 +93,10 @@ class RalphLoopEngine:
         self.files_expected: int = 0
         self.files_created_count: int = 0
         self.phase_durations: Dict[str, List[float]] = {}  # Track historical phase durations
+        
+        # Project metadata
+        self.project_name: Optional[str] = None
+        self.project_description: Optional[str] = None
     
     def set_status_callback(self, callback: Callable[[Dict[str, Any]], None]) -> None:
         """Set callback for status updates.
@@ -269,6 +273,10 @@ class RalphLoopEngine:
         """
         self._log_status(f"Initializing project: {project_name}", Phase.IDLE)
         
+        # Store project metadata
+        self.project_name = project_name
+        self.project_description = description
+        
         # Create project directory
         self.project_path.mkdir(parents=True, exist_ok=True)
         
@@ -404,6 +412,197 @@ See @fix_plan.md for current tasks.
         
         return tasks
     
+    def _generate_tasks_from_description(self) -> List[str]:
+        """Generate initial tasks from project description using LLM.
+        
+        Returns:
+            List of generated task descriptions
+        """
+        if not self.project_description:
+            # Try to read from README if description not stored
+            readme_path = self.project_path / 'README.md'
+            if readme_path.exists():
+                content = readme_path.read_text()
+                # Extract description (first paragraph after title)
+                lines = content.split('\n')
+                for i, line in enumerate(lines):
+                    if line.startswith('# '):
+                        # Found title, description should be in next non-empty lines
+                        desc_lines = []
+                        for j in range(i + 1, len(lines)):
+                            if lines[j].strip() and not lines[j].startswith('#'):
+                                desc_lines.append(lines[j].strip())
+                            elif lines[j].startswith('#'):
+                                break
+                        if desc_lines:
+                            self.project_description = ' '.join(desc_lines)
+                        break
+        
+        if not self.project_description:
+            return []
+        
+        self._log_status("Generating tasks from project description", Phase.IDLE)
+        
+        system_prompt = """You are Ralph, an autonomous AI development agent.
+Your role is to break down project ideas into actionable tasks.
+
+Given a project description, generate 3-5 specific, actionable tasks that need to be completed.
+Tasks should be:
+- Specific and clear
+- Actionable (can be implemented)
+- Ordered logically (most important first)
+- Focused on creating deliverables or core functionality
+
+Return ONLY a list of tasks, one per line, without numbering or bullet points.
+Each task should be a single line describing what needs to be done."""
+        
+        prompt = f"""Project Name: {self.project_name or 'Unknown'}
+
+Project Description:
+{self.project_description}
+
+Generate 3-5 specific, actionable tasks to get started with this project.
+List one task per line, without numbering or bullets."""
+        
+        try:
+            # Check if adapter is available before attempting to generate
+            if not self.adapter.check_available():
+                self._log_status("Ollama adapter not available, cannot generate tasks automatically", Phase.ERROR)
+                return []
+            
+            result = self.adapter.generate(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                task_type="implementation"
+            )
+            
+            response = result.get('content', '')
+            
+            # Parse response into task list
+            tasks = []
+            for line in response.strip().split('\n'):
+                line = line.strip()
+                # Remove common prefixes like "- ", "* ", numbers, etc.
+                line = re.sub(r'^[-*•]\s*', '', line)
+                line = re.sub(r'^\d+[.)]\s*', '', line)
+                if line and len(line) > 10:  # Filter out very short lines
+                    tasks.append(line)
+            
+            if tasks:
+                self._log_status(f"Generated {len(tasks)} tasks from description", Phase.IDLE)
+            else:
+                self._log_status("Could not parse generated tasks", Phase.IDLE)
+            
+            return tasks
+            
+        except Exception as e:
+            logger.error(f"Error generating tasks: {e}")
+            self._log_status(f"Error generating tasks: {e}", Phase.ERROR)
+            return []
+    
+    def _add_tasks_to_fix_plan(self, tasks: List[str]) -> bool:
+        """Add tasks to @fix_plan.md in High Priority section.
+        
+        Args:
+            tasks: List of task descriptions to add
+            
+        Returns:
+            True if tasks were added successfully
+        """
+        if not tasks:
+            return False
+        
+        fix_plan_path = self.project_path / '@fix_plan.md'
+        
+        # Read existing content or create template
+        if fix_plan_path.exists():
+            content = fix_plan_path.read_text()
+        else:
+            content = f"""# Fix Plan - Prioritized Task List
+
+> This file tracks prioritized tasks for the Ralph autonomous development workflow.
+> Tasks are marked with `[ ]` for incomplete and `[x]` for complete.
+
+**Last Updated:** {datetime.now().strftime('%Y-%m-%d')}
+
+---
+
+## High Priority
+
+> Critical functionality, blocking work, or core features
+
+---
+
+## Medium Priority
+
+> Important but not blocking, enhancements, nice-to-have features
+
+---
+
+## Low Priority
+
+> Polish, optimizations, future enhancements
+
+---
+
+## Completed Tasks
+
+> Moved here for reference after completion
+
+---
+
+"""
+        
+        # Find High Priority section and insert tasks
+        lines = content.split('\n')
+        new_lines = []
+        high_priority_found = False
+        tasks_added = False
+        after_description = False
+        
+        for i, line in enumerate(lines):
+            # Check if we're at the High Priority section header
+            if line.strip() == '## High Priority':
+                high_priority_found = True
+                new_lines.append(line)
+                continue
+            
+            # After High Priority header, look for the description line (starts with >)
+            if high_priority_found and not after_description:
+                new_lines.append(line)
+                if line.strip().startswith('>'):
+                    after_description = True
+                continue
+            
+            # After description, insert tasks before the next section separator or header
+            if high_priority_found and after_description and not tasks_added:
+                # Check if this is the end of High Priority section
+                if line.strip().startswith('---') or (line.strip().startswith('##') and line.strip() != '## High Priority'):
+                    # Insert tasks before this separator/header
+                    for task in tasks:
+                        new_lines.append(f"- [ ] {task}")
+                    new_lines.append('')  # Add blank line before separator
+                    tasks_added = True
+                
+                new_lines.append(line)
+                continue
+            
+            # Default: just add the line
+            new_lines.append(line)
+        
+        # If High Priority section wasn't found, append it at the end
+        if not high_priority_found:
+            new_lines.append('\n## High Priority\n\n> Critical functionality, blocking work, or core features\n')
+            for task in tasks:
+                new_lines.append(f"- [ ] {task}")
+            new_lines.append('\n---\n')
+            tasks_added = True
+        
+        content = '\n'.join(new_lines)
+        fix_plan_path.write_text(content)
+        
+        return tasks_added
+    
     def _phase_study(self, task: str) -> Dict[str, Any]:
         """Execute Study phase.
         
@@ -426,9 +625,14 @@ Analyze the task and provide:
 
 Be concise and focused."""
         
+        # Include user context if available
+        context_note = ""
+        if self.user_input and self.user_input != task:
+            context_note = f"\n\nAdditional context from user:\n{self.user_input}\n"
+        
         prompt = f"""Study and analyze this task:
 
-{task}
+{task}{context_note}
 
 Provide a clear analysis of what needs to be done, key requirements, and an implementation approach."""
         
@@ -481,6 +685,10 @@ Provide code blocks with file paths clearly marked."""
         context = f"Task: {task}\n"
         if study_output:
             context += f"\nStudy Analysis:\n{study_output}\n"
+        
+        # Include user context if available
+        if self.user_input and self.user_input != task:
+            context += f"\nAdditional context from user:\n{self.user_input}\n"
         
         prompt = f"""{context}
 
@@ -1083,11 +1291,21 @@ Provide test cases and validation steps. If tests exist, suggest running them. I
                 # Get next task
                 tasks = self._read_fix_plan()
                 if not tasks:
-                    self._log_status("No more tasks, loop complete", Phase.COMPLETE)
-                    with self.lock:
-                        self.current_phase = Phase.COMPLETE
-                        self.is_running = False
-                    break
+                    # Try to generate tasks from project description
+                    generated_tasks = self._generate_tasks_from_description()
+                    if generated_tasks:
+                        if self._add_tasks_to_fix_plan(generated_tasks):
+                            self._log_status(f"Auto-generated {len(generated_tasks)} tasks, continuing", Phase.IDLE)
+                            # Re-read tasks after adding them
+                            tasks = self._read_fix_plan()
+                    
+                    # If still no tasks after generation attempt, complete
+                    if not tasks:
+                        self._log_status("No more tasks, loop complete", Phase.COMPLETE)
+                        with self.lock:
+                            self.current_phase = Phase.COMPLETE
+                            self.is_running = False
+                        break
                 
                 self.current_task = tasks[0]
                 self.task_start_time = datetime.now()
